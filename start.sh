@@ -63,6 +63,9 @@ echo ""
 echo "=== 天工流已启动！ ==="
 echo "打开浏览器访问 http://localhost:3000"
 echo ""
+echo "Local Mode: 在另一终端运行以下命令连接你的电脑"
+echo "  python local_client.py"
+echo ""
 echo "Press Ctrl+C to stop both services"
 
 trap "kill $BACKEND_PID $FRONTEND_PID 2>/dev/null; exit" INT TERM

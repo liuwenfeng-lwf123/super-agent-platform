@@ -16,6 +16,10 @@ import {
   Paperclip,
   Code2,
   StopCircle,
+  Monitor,
+  Wifi,
+  WifiOff,
+  Shield,
 } from "lucide-react";
 import {
   sendMessage,
@@ -23,8 +27,12 @@ import {
   deleteThread,
   fetchSkills,
   fetchModels,
+  fetchLocalClients,
+  sendLocalMessage,
+  bindLocalThread,
+  setLocalAutoApprove,
 } from "@/lib/api";
-import type { ThreadListItem, SSEEventData, SkillConfig, ModelConfig } from "@/types";
+import type { ThreadListItem, SSEEventData, SkillConfig, ModelConfig, LocalClient } from "@/types";
 import type { ToolCallInfo } from "@/components/MessageRenderer";
 import { MessageContent, ToolCallsPanel, WebPreviewPanel } from "@/components/MessageRenderer";
 import { FileAttachment, parseFileAttachments } from "@/components/FileAttachment";
@@ -46,7 +54,9 @@ export default function ChatPage() {
   const [showSettingsPage, setShowSettingsPage] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
-  const [agentMode, setAgentMode] = useState<"flash" | "standard" | "pro" | "ultra">("standard");
+  const [agentMode, setAgentMode] = useState<"flash" | "standard" | "pro" | "ultra" | "local">("standard");
+  const [localClients, setLocalClients] = useState<LocalClient[]>([]);
+  const [showLocalPanel, setShowLocalPanel] = useState(false);
   const [agentStatuses, setAgentStatuses] = useState<{ id: string; status: string; task?: string }[]>([]);
   const [toolCalls, setToolCalls] = useState<ToolCallInfo[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -58,6 +68,9 @@ export default function ChatPage() {
     loadThreads();
     loadSkills();
     loadModels();
+    const interval = setInterval(loadLocalClients, 5000);
+    loadLocalClients();
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -83,6 +96,13 @@ export default function ChatPage() {
       const data = await fetchModels();
       setModels(data);
       if (data.length > 0) setSelectedModel(data[0].name);
+    } catch {}
+  };
+
+  const loadLocalClients = async () => {
+    try {
+      const data = await fetchLocalClients();
+      setLocalClients(data);
     } catch {}
   };
 
@@ -136,12 +156,13 @@ export default function ChatPage() {
     let collected = "";
 
     try {
-      await sendMessage(
+      const sendFn = agentMode === "local" ? sendLocalMessage : sendMessage;
+      await sendFn(
         {
-          thread_id: activeThreadId,
+          thread_id: activeThreadId || undefined,
           message: userMsg.content,
           model: selectedModel || undefined,
-          mode: agentMode,
+          mode: agentMode === "local" ? "local" : agentMode,
         },
         (event: SSEEventData) => {
           if (event.type === "token" && event.content) {
@@ -302,22 +323,37 @@ export default function ChatPage() {
               {activeThreadId ? "Conversation" : "New Chat"}
             </h1>
             <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: "var(--border-color)" }}>
-              {(["flash", "standard", "pro", "ultra"] as const).map((m) => (
+              {(["flash", "standard", "pro", "ultra", "local"] as const).map((m) => (
                 <button
                   key={m}
                   onClick={() => setAgentMode(m)}
-                  className="px-2 py-1 text-xs font-medium transition-colors"
+                  className="px-2 py-1 text-xs font-medium transition-colors flex items-center gap-1"
                   style={{
                     background: agentMode === m ? "var(--accent)" : "transparent",
                     color: agentMode === m ? "#fff" : "var(--text-secondary)",
                   }}
                 >
+                  {m === "local" && <Monitor className="w-3 h-3" />}
                   {m.charAt(0).toUpperCase() + m.slice(1)}
                 </button>
               ))}
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {agentMode === "local" && (
+              <button
+                onClick={() => setShowLocalPanel(!showLocalPanel)}
+                className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border transition-colors hover:opacity-80"
+                style={{
+                  borderColor: localClients.length > 0 ? "#22c55e" : "var(--border-color)",
+                  color: localClients.length > 0 ? "#22c55e" : "var(--text-secondary)",
+                  background: localClients.length > 0 ? "rgba(34,197,94,0.1)" : "transparent",
+                }}
+              >
+                {localClients.length > 0 ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
+                {localClients.length > 0 ? `${localClients.length} Client` : "No Client"}
+              </button>
+            )}
             {streaming && (
               <button
                 onClick={handleStop}
@@ -353,6 +389,11 @@ export default function ChatPage() {
               <p className="text-sm max-w-md text-center" style={{ color: "var(--text-secondary)" }}>
                 AI Super Agent — 搜索、编码、创作，一气呵成
               </p>
+              {agentMode === "local" && localClients.length === 0 && (
+                <div className="mt-2 px-4 py-2 rounded-lg text-xs" style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)" }}>
+                  Local Mode requires a connected client. Run <code className="font-mono">python local_client.py</code> on your computer.
+                </div>
+              )}
 
               <div className="flex gap-3 mt-2">
                 {([
@@ -360,6 +401,7 @@ export default function ChatPage() {
                   { mode: "standard", desc: "Tools + workspace", icon: "S" },
                   { mode: "pro", desc: "Plan then execute", icon: "P" },
                   { mode: "ultra", desc: "Multi-agent parallel", icon: "U" },
+                  { mode: "local", desc: "Operate your PC", icon: "L" },
                 ] as const).map((m) => (
                   <button
                     key={m.mode}
@@ -524,7 +566,7 @@ export default function ChatPage() {
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Send a message... Try 'search AI news' or 'run python code'"
+                placeholder={agentMode === "local" ? "Local Mode: Ask AI to operate your computer..." : "Send a message... Try 'search AI news' or 'run python code'"}
                 rows={1}
                 className="w-full pl-4 pr-12 py-3 rounded-xl border text-sm resize-none outline-none focus:ring-2 transition-shadow"
                 style={{
@@ -555,6 +597,101 @@ export default function ChatPage() {
 
       {/* Workspace Panel */}
       <WorkspacePanel threadId={activeThreadId} onPreviewHtml={(html) => setPreviewHtml(html)} />
+
+      {/* Local Mode Panel */}
+      {showLocalPanel && agentMode === "local" && (
+        <div className="w-80 flex-shrink-0 flex flex-col border-l" style={{ borderColor: "var(--border-color)", background: "var(--bg-secondary)" }}>
+          <div className="p-3 border-b flex items-center justify-between" style={{ borderColor: "var(--border-color)" }}>
+            <div className="flex items-center gap-2">
+              <Monitor className="w-4 h-4" style={{ color: "var(--accent)" }} />
+              <span className="text-sm font-semibold">Local Mode</span>
+            </div>
+            <button onClick={() => setShowLocalPanel(false)} className="text-xs" style={{ color: "var(--text-secondary)" }}>Close</button>
+          </div>
+
+          <div className="p-3 space-y-3 flex-1 overflow-y-auto">
+            <div>
+              <div className="text-xs font-medium mb-2" style={{ color: "var(--text-secondary)" }}>Connection Status</div>
+              {localClients.length === 0 ? (
+                <div className="p-3 rounded-lg text-xs space-y-2" style={{ background: "var(--bg-primary)", border: "1px dashed var(--border-color)" }}>
+                  <div className="flex items-center gap-2" style={{ color: "var(--text-secondary)" }}>
+                    <WifiOff className="w-4 h-4" /> No client connected
+                  </div>
+                  <p style={{ color: "var(--text-secondary)" }}>Run this on your computer:</p>
+                  <code className="block p-2 rounded text-xs" style={{ background: "rgba(0,0,0,0.3)", color: "#22c55e" }}>
+                    python local_client.py
+                  </code>
+                </div>
+              ) : (
+                localClients.map((c) => (
+                  <div key={c.client_id} className="p-3 rounded-lg text-xs space-y-1.5" style={{ background: "var(--bg-primary)" }}>
+                    <div className="flex items-center gap-2">
+                      <Wifi className="w-3 h-3" style={{ color: "#22c55e" }} />
+                      <span className="font-medium" style={{ color: "var(--text-primary)" }}>{c.info.hostname || c.client_id}</span>
+                    </div>
+                    <div style={{ color: "var(--text-secondary)" }}>
+                      {c.info.os} {c.info.arch} | Python {c.info.python}
+                    </div>
+                    {activeThreadId && (
+                      <button
+                        onClick={() => bindLocalThread(activeThreadId, c.client_id)}
+                        className="mt-1 px-2 py-1 rounded text-xs font-medium"
+                        style={{ background: "var(--accent)", color: "#fff" }}
+                      >
+                        Bind to this thread
+                      </button>
+                    )}
+                    <div className="flex items-center gap-2 mt-1">
+                      <Shield className="w-3 h-3" style={{ color: "var(--text-secondary)" }} />
+                      <span style={{ color: "var(--text-secondary)" }}>Auto-approve:</span>
+                      <button
+                        onClick={() => setLocalAutoApprove(c.client_id, !c.auto_approve)}
+                        className="px-2 py-0.5 rounded text-xs font-medium"
+                        style={{
+                          background: c.auto_approve ? "#ef4444" : "var(--bg-secondary)",
+                          color: c.auto_approve ? "#fff" : "var(--text-secondary)",
+                          border: c.auto_approve ? "none" : "1px solid var(--border-color)",
+                        }}
+                      >
+                        {c.auto_approve ? "ON" : "OFF"}
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div>
+              <div className="text-xs font-medium mb-2" style={{ color: "var(--text-secondary)" }}>How it works</div>
+              <div className="text-xs space-y-1.5" style={{ color: "var(--text-secondary)" }}>
+                <p>1. Run <code style={{ color: "#22c55e" }}>python local_client.py</code> on your computer</p>
+                <p>2. AI sends commands to your computer</p>
+                <p>3. You approve each action before it runs</p>
+                <p>4. Enable auto-approve to skip confirmation</p>
+              </div>
+            </div>
+
+            <div>
+              <div className="text-xs font-medium mb-2" style={{ color: "var(--text-secondary)" }}>Capabilities</div>
+              <div className="space-y-1">
+                {[
+                  { icon: "$", label: "Run terminal commands" },
+                  { icon: "R", label: "Read any file" },
+                  { icon: "W", label: "Write/edit files" },
+                  { icon: "L", label: "Browse file system" },
+                  { icon: "P", label: "Execute Python" },
+                  { icon: "O", label: "Open applications" },
+                ].map((cap) => (
+                  <div key={cap.label} className="flex items-center gap-2 text-xs">
+                    <span className="w-5 h-5 rounded flex items-center justify-center text-xs font-bold" style={{ background: "var(--accent-light)", color: "var(--accent)" }}>{cap.icon}</span>
+                    <span style={{ color: "var(--text-primary)" }}>{cap.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -102,3 +102,67 @@ export function getWorkspaceDownloadUrl(threadId: string, filePath: string) {
 export function getOutputDownloadUrl(threadId: string, filePath: string) {
   return `${API_BASE}/outputs/${threadId}/download/${filePath}`;
 }
+
+export async function fetchLocalClients() {
+  const res = await fetch(`${API_BASE}/local/clients`);
+  return res.json();
+}
+
+export async function setLocalAutoApprove(clientId: string, enabled: boolean) {
+  const res = await fetch(`${API_BASE}/local/clients/${clientId}/auto-approve?enabled=${enabled}`, { method: "POST" });
+  return res.json();
+}
+
+export async function bindLocalThread(threadId: string, clientId: string) {
+  const res = await fetch(`${API_BASE}/local/bind-thread?thread_id=${threadId}&client_id=${clientId}`, { method: "POST" });
+  return res.json();
+}
+
+export async function fetchLocalAuditLog(limit: number = 100) {
+  const res = await fetch(`${API_BASE}/local/audit?limit=${limit}`);
+  return res.json();
+}
+
+export async function sendLocalMessage(
+  request: { thread_id?: string; message: string; model?: string; mode?: string },
+  onEvent: (event: SSEEventData) => void,
+): Promise<void> {
+  const response = await fetch(`${API_BASE}/local/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP error: ${response.status}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error("No response body");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    let currentEvent = "";
+    for (const line of lines) {
+      if (line.startsWith("event: ")) {
+        currentEvent = line.slice(7).trim();
+      } else if (line.startsWith("data: ")) {
+        try {
+          const data = JSON.parse(line.slice(6));
+          onEvent({ type: currentEvent as SSEEventData["type"], ...data });
+        } catch {
+          // skip malformed data
+        }
+      }
+    }
+  }
+}

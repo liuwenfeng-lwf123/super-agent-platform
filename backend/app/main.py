@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api.chat import router
+from app.api.local import local_router, local_ws_router
 
 app = FastAPI(title=settings.app_name, version="1.0.0")
 
@@ -14,6 +15,8 @@ app.add_middleware(
 )
 
 app.include_router(router)
+app.include_router(local_router)
+app.include_router(local_ws_router)
 
 
 @app.on_event("startup")

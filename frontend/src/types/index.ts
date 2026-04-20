@@ -85,3 +85,17 @@ export interface WorkspaceListing {
   path: string;
   entries: WorkspaceFile[];
 }
+
+export interface LocalClient {
+  client_id: string;
+  info: {
+    hostname?: string;
+    os?: string;
+    os_version?: string;
+    arch?: string;
+    python?: string;
+    home?: string;
+  };
+  connected_at: number;
+  auto_approve: boolean;
+}
