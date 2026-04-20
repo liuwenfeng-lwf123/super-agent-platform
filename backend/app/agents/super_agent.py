@@ -63,7 +63,7 @@ class SuperAgent:
         if not api_key or api_key == "sk-your-api-key-here":
             yield json.dumps({
                 "type": "token",
-                "content": "**Super Agent Platform is running!**\n\nPlease configure your API Key to start chatting.",
+                "content": "**天工流已启动！**\n\n请配置 API Key 开始对话。",
             })
             yield json.dumps({"type": "done"})
             return

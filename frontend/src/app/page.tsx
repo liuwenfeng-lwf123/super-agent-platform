@@ -248,7 +248,7 @@ export default function ChatPage() {
         <div className="p-4 flex items-center justify-between border-b" style={{ borderColor: "var(--border-color)" }}>
           <div className="flex items-center gap-2">
             <Zap className="w-5 h-5" style={{ color: "var(--accent)" }} />
-            <span className="font-bold text-sm">Super Agent</span>
+            <span className="font-bold text-sm">天工流</span>
           </div>
           <button onClick={handleNewChat} className="p-1.5 rounded-lg hover:opacity-80" style={{ background: "var(--accent)", color: "#fff" }}>
             <Plus className="w-4 h-4" />
@@ -349,9 +349,9 @@ export default function ChatPage() {
               <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: "var(--accent-light)" }}>
                 <Bot className="w-8 h-8" style={{ color: "var(--accent)" }} />
               </div>
-              <h2 className="text-xl font-semibold">Super Agent Platform</h2>
+              <h2 className="text-xl font-semibold">天工流</h2>
               <p className="text-sm max-w-md text-center" style={{ color: "var(--text-secondary)" }}>
-                AI Super Agent that researches, codes, and creates with tools, skills, and workspace.
+                AI Super Agent — 搜索、编码、创作，一气呵成
               </p>
 
               <div className="flex gap-3 mt-2">

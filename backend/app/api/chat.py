@@ -189,7 +189,7 @@ async def delete_memory(entry_id: str):
 
 @router.get("/health")
 async def health():
-    return {"status": "ok", "app": "Super Agent Platform"}
+    return {"status": "ok", "app": "天工流 TianGongFlow"}
 
 
 @router.post("/upload")

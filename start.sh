@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "=== Super Agent Platform - Quick Start ==="
+echo "=== 天工流 TianGongFlow - Quick Start ==="
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="$SCRIPT_DIR/backend"
@@ -60,8 +60,8 @@ FRONTEND_PID=$!
 echo "Frontend started (PID: $FRONTEND_PID) on http://localhost:3000"
 
 echo ""
-echo "=== Super Agent Platform is running! ==="
-echo "Open http://localhost:3000 in your browser"
+echo "=== 天工流已启动！ ==="
+echo "打开浏览器访问 http://localhost:3000"
 echo ""
 echo "Press Ctrl+C to stop both services"
 

@@ -105,7 +105,7 @@ export function WorkspacePanel({ threadId, onPreviewHtml }: WorkspacePanelProps)
       >
         <div className="p-3 border-b" style={{ borderColor: "var(--border-color)" }}>
           <div className="flex items-center gap-2 text-xs font-medium" style={{ color: "var(--text-secondary)" }}>
-            <FolderOpen className="w-4 h-4" /> Workspace
+            <FolderOpen className="w-4 h-4" /> 工作区
           </div>
         </div>
         <div className="flex-1 flex items-center justify-center p-4">
@@ -125,7 +125,7 @@ export function WorkspacePanel({ threadId, onPreviewHtml }: WorkspacePanelProps)
       <div className="p-3 border-b" style={{ borderColor: "var(--border-color)" }}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 text-xs font-medium" style={{ color: "var(--accent)" }}>
-            <FolderOpen className="w-4 h-4" /> Workspace
+            <FolderOpen className="w-4 h-4" /> 工作区
           </div>
           <button onClick={loadFiles} className="p-1 rounded hover:opacity-70" style={{ color: "var(--text-secondary)" }}>
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin" : ""}`} />
