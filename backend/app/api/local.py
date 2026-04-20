@@ -1,4 +1,4 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request
 from app.local.gateway import local_gateway, LocalClient
 from app.local.agent import local_agent
 from app.agents.store import thread_store
@@ -93,13 +93,14 @@ async def get_audit_log(limit: int = 100):
 
 
 @local_router.post("/chat")
-async def local_chat(request: dict):
+async def local_chat(request: Request):
     from fastapi.responses import StreamingResponse
 
-    thread_id = request.get("thread_id")
-    message = request.get("message", "")
-    model = request.get("model")
-    mode = request.get("mode", "local")
+    body = await request.json()
+    thread_id = body.get("thread_id")
+    message = body.get("message", "")
+    model = body.get("model")
+    mode = body.get("mode", "local")
 
     if thread_id:
         thread = await thread_store.get(thread_id)

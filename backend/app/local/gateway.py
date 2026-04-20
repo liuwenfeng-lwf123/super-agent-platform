@@ -2,8 +2,11 @@ import asyncio
 import json
 import time
 import uuid
+import logging
 from typing import Optional
 from fastapi import WebSocket
+
+logger = logging.getLogger(__name__)
 
 
 class LocalClient:
@@ -17,7 +20,8 @@ class LocalClient:
 
     async def send_request(self, action: str, params: dict, timeout: float = 120) -> dict:
         request_id = str(uuid.uuid4())
-        future = asyncio.get_event_loop().create_future()
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
         self._pending_requests[request_id] = future
 
         message = {
@@ -29,12 +33,15 @@ class LocalClient:
 
         try:
             await self.websocket.send_json(message)
+            logger.info(f"Sent request {request_id} to client {self.client_id}: action={action}")
         except Exception as e:
             self._pending_requests.pop(request_id, None)
+            logger.error(f"Failed to send request to client {self.client_id}: {e}")
             return {"success": False, "error": f"Send failed: {e}"}
 
         try:
             result = await asyncio.wait_for(future, timeout=timeout)
+            logger.info(f"Got response for {request_id}: success={result.get('success')}")
             return result
         except asyncio.TimeoutError:
             self._pending_requests.pop(request_id, None)

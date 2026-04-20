@@ -1,6 +1,9 @@
 from langchain_core.tools import tool
 from app.local.gateway import local_gateway
 import contextvars
+import logging
+
+logger = logging.getLogger(__name__)
 
 _thread_ctx = contextvars.ContextVar("thread_id", default="_default")
 
@@ -17,12 +20,13 @@ async def _call_local(action: str, params: dict) -> dict:
     thread_id = _get_thread_id()
     client = local_gateway.get_client_for_thread(thread_id)
     if not client:
+        logger.warning(f"No local client for thread {thread_id}")
         return {"success": False, "error": "No local client connected. Please start the local client on your computer."}
 
-    client._auto_approve = local_gateway.get_client(client.client_id)._auto_approve if local_gateway.get_client(client.client_id) else False
-
+    logger.info(f"Calling local action={action} on client={client.client_id}, thread={thread_id}")
     result = await client.send_request(action, params)
     local_gateway.add_audit(client.client_id, action, params, result)
+    logger.info(f"Local action={action} result: success={result.get('success')}")
     return result
 
 
