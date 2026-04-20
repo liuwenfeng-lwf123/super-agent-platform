@@ -1,0 +1,27 @@
+{
+  "id": "9cc98d21-36a3-4c6a-bb58-0cdeac4da486",
+  "title": "search for latest news about AI agents in 2026, th...",
+  "messages": [
+    {
+      "id": "b371f3f5-a514-45de-9496-7dffbec3db3e",
+      "thread_id": "9cc98d21-36a3-4c6a-bb58-0cdeac4da486",
+      "role": "user",
+      "content": "search for latest news about AI agents in 2026, then write a brief summary report to report.md",
+      "agent_id": null,
+      "metadata": {},
+      "created_at": "2026-04-20T07:50:58.484548"
+    },
+    {
+      "id": "5f2435ca-f468-4590-b4d2-45f3540f8219",
+      "thread_id": "9cc98d21-36a3-4c6a-bb58-0cdeac4da486",
+      "role": "assistant",
+      "content": "I'll search for the latest news about AI agents in 2026 and create a summary report. Let me do that for you.\n\nI apologize for the search error. It seems there might not be any current news specifically about AI agents in 2026, possibly because that's a future year. Let me try searching for more general recent news about AI agents instead.\n\nI'm experiencing issues with the search functionality. Let me try a different approach by searching for general information about AI agents to at least provide you with some relevant information.\n\n",
+      "agent_id": null,
+      "metadata": {},
+      "created_at": "2026-04-20T07:51:04.217816"
+    }
+  ],
+  "created_at": "2026-04-20T07:50:58.484264",
+  "updated_at": "2026-04-20T07:51:04.217839",
+  "metadata": {}
+}

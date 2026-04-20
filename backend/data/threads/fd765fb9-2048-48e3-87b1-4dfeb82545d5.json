@@ -1,0 +1,27 @@
+{
+  "id": "fd765fb9-2048-48e3-87b1-4dfeb82545d5",
+  "title": "hi",
+  "messages": [
+    {
+      "id": "cf6b7ffb-d972-434e-802b-63a302072f41",
+      "thread_id": "fd765fb9-2048-48e3-87b1-4dfeb82545d5",
+      "role": "user",
+      "content": "hi",
+      "agent_id": null,
+      "metadata": {},
+      "created_at": "2026-04-20T05:27:05.068136"
+    },
+    {
+      "id": "a6f91219-8c25-428d-aa33-b5d84107657d",
+      "thread_id": "fd765fb9-2048-48e3-87b1-4dfeb82545d5",
+      "role": "assistant",
+      "content": "Hello! How can I assist you today?",
+      "agent_id": null,
+      "metadata": {},
+      "created_at": "2026-04-20T05:27:05.551824"
+    }
+  ],
+  "created_at": "2026-04-20T05:27:05.066434",
+  "updated_at": "2026-04-20T05:27:05.551842",
+  "metadata": {}
+}

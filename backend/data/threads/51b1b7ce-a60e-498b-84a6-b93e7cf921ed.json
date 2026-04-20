@@ -1,0 +1,27 @@
+{
+  "id": "51b1b7ce-a60e-498b-84a6-b93e7cf921ed",
+  "title": "2+3等于多少？用calculate工具算一下",
+  "messages": [
+    {
+      "id": "fc80481c-f522-4ae8-b2cf-96ecd93d1891",
+      "thread_id": "51b1b7ce-a60e-498b-84a6-b93e7cf921ed",
+      "role": "user",
+      "content": "2+3等于多少？用calculate工具算一下",
+      "agent_id": null,
+      "metadata": {},
+      "created_at": "2026-04-20T06:17:23.704440"
+    },
+    {
+      "id": "b8d0a158-66a4-455c-ac59-04da92b549f2",
+      "thread_id": "51b1b7ce-a60e-498b-84a6-b93e7cf921ed",
+      "role": "assistant",
+      "content": "2 + 3 等于 5。",
+      "agent_id": null,
+      "metadata": {},
+      "created_at": "2026-04-20T06:17:25.474000"
+    }
+  ],
+  "created_at": "2026-04-20T06:17:23.703906",
+  "updated_at": "2026-04-20T06:17:25.474021",
+  "metadata": {}
+}

@@ -1,0 +1,27 @@
+{
+  "id": "c10cd662-6b7e-4ed5-beee-e313ca0ebd48",
+  "title": "list all files in the workspace",
+  "messages": [
+    {
+      "id": "3e184b98-db4e-4626-9eb9-45483e1c041d",
+      "thread_id": "c10cd662-6b7e-4ed5-beee-e313ca0ebd48",
+      "role": "user",
+      "content": "list all files in the workspace",
+      "agent_id": null,
+      "metadata": {},
+      "created_at": "2026-04-20T07:27:12.182294"
+    },
+    {
+      "id": "fd2ee020-7adc-4c83-8d44-7d6f0338d5cb",
+      "thread_id": "c10cd662-6b7e-4ed5-beee-e313ca0ebd48",
+      "role": "assistant",
+      "content": "I'll list all files in the workspace for you.\n\nThe workspace is currently empty. There are no files or directories in the workspace at the moment.\n\nIs there anything specific you'd like me to help you create or work on? I can:\n- Create new files and directories\n- Write code or documents\n- Perform research and save findings\n- Execute programs or scripts\n- Or assist with any other tasks you have in mind",
+      "agent_id": null,
+      "metadata": {},
+      "created_at": "2026-04-20T07:27:15.060132"
+    }
+  ],
+  "created_at": "2026-04-20T07:27:12.181812",
+  "updated_at": "2026-04-20T07:27:15.060162",
+  "metadata": {}
+}

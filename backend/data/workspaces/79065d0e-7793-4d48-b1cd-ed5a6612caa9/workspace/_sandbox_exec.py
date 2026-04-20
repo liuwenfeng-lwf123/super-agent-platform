@@ -1,0 +1,1 @@
+runpy.run_path('hello.py')

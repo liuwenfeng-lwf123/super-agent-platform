@@ -1,0 +1,18 @@
+{
+  "id": "8a5d5a58-2e2e-44ad-a035-bf975c9fa34c",
+  "title": "帮我研究一下Python和JavaScript的优缺点对比",
+  "messages": [
+    {
+      "id": "12c140a9-6702-4b26-8908-115579edfcb5",
+      "thread_id": "8a5d5a58-2e2e-44ad-a035-bf975c9fa34c",
+      "role": "user",
+      "content": "帮我研究一下Python和JavaScript的优缺点对比",
+      "agent_id": null,
+      "metadata": {},
+      "created_at": "2026-04-20T05:26:12.586299"
+    }
+  ],
+  "created_at": "2026-04-20T05:26:12.586048",
+  "updated_at": "2026-04-20T05:26:12.586311",
+  "metadata": {}
+}

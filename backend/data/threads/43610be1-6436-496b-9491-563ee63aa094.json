@@ -1,0 +1,27 @@
+{
+  "id": "43610be1-6436-496b-9491-563ee63aa094",
+  "title": "3+5等于几",
+  "messages": [
+    {
+      "id": "260217e5-ead0-4e96-933d-e31b85622317",
+      "thread_id": "43610be1-6436-496b-9491-563ee63aa094",
+      "role": "user",
+      "content": "3+5等于几",
+      "agent_id": null,
+      "metadata": {},
+      "created_at": "2026-04-20T05:26:11.156408"
+    },
+    {
+      "id": "d84e5cad-50dc-42a7-8f86-5fa896d6b60a",
+      "thread_id": "43610be1-6436-496b-9491-563ee63aa094",
+      "role": "assistant",
+      "content": "3+5等于8。",
+      "agent_id": null,
+      "metadata": {},
+      "created_at": "2026-04-20T05:26:12.550686"
+    }
+  ],
+  "created_at": "2026-04-20T05:26:11.155565",
+  "updated_at": "2026-04-20T05:26:12.550702",
+  "metadata": {}
+}
