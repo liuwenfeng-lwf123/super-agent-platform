@@ -2,6 +2,16 @@
 .claude
 .gemini
 .opencode
+.monkeycode
+
+# Next.js
+.next/
+
+# Runtime data
+backend/data/threads/
+backend/data/workspaces/
+backend/data/memory/
+backend/data/uploads/
 
 # IDE and Editors
 **/.idea/

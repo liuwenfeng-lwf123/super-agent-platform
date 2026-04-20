@@ -1,1 +1,0 @@
-self.__REACT_LOADABLE_MANIFEST="{\"app/page.tsx -> @/components/SettingsPanel\":{\"id\":\"app/page.tsx -> @/components/SettingsPanel\",\"files\":[\"static/chunks/_app-pages-browser_src_components_SettingsPanel_tsx.js\"]}}"
