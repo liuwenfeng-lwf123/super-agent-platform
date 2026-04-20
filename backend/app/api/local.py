@@ -2,8 +2,12 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request
 from app.local.gateway import local_gateway, LocalClient
 from app.local.agent import local_agent
 from app.agents.store import thread_store
-from app.models.schemas import Message
+from app.models.schemas import Message, ChatRequest
+from fastapi.responses import StreamingResponse
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 local_router = APIRouter(prefix="/api/local", tags=["local"])
 local_ws_router = APIRouter(tags=["local-ws"])
@@ -93,15 +97,10 @@ async def get_audit_log(limit: int = 100):
 
 
 @local_router.post("/chat")
-async def local_chat(request: Request):
-    from fastapi.responses import StreamingResponse
+async def local_chat(request: ChatRequest):
+    logger.info(f"Local chat request: thread_id={request.thread_id}, mode={request.mode}, message={request.message[:50]}")
 
-    body = await request.json()
-    thread_id = body.get("thread_id")
-    message = body.get("message", "")
-    model = body.get("model")
-    mode = body.get("mode", "local")
-
+    thread_id = request.thread_id
     if thread_id:
         thread = await thread_store.get(thread_id)
         if not thread:
@@ -109,37 +108,41 @@ async def local_chat(request: Request):
     else:
         thread = await thread_store.create()
 
-    user_msg = Message(role="user", content=message, thread_id=thread.id)
+    user_msg = Message(role="user", content=request.message, thread_id=thread.id)
     await thread_store.add_message(thread.id, user_msg)
 
     async def event_generator():
         full_content = []
-
-        async for event_str in local_agent.handle_message(
-            message=message,
-            thread_messages=thread.messages,
-            model=model,
-            thread_id=thread.id,
-        ):
-            event_data = json.loads(event_str)
-            if event_data.get("type") == "token":
-                full_content.append(event_data.get("content", ""))
-                yield f"event: token\ndata: {event_str}\n\n"
-            elif event_data.get("type") == "tool_call":
-                yield f"event: tool_call\ndata: {event_str}\n\n"
-            elif event_data.get("type") == "tool_result":
-                yield f"event: tool_result\ndata: {event_str}\n\n"
-            elif event_data.get("type") == "error":
-                yield f"event: error\ndata: {event_str}\n\n"
-            elif event_data.get("type") == "done":
-                assistant_content = "".join(full_content)
-                assistant_msg = Message(
-                    role="assistant",
-                    content=assistant_content,
-                    thread_id=thread.id,
-                )
-                await thread_store.add_message(thread.id, assistant_msg)
-                yield f"event: done\ndata: {json.dumps({'thread_id': thread.id, 'type': 'done'})}\n\n"
+        try:
+            async for event_str in local_agent.handle_message(
+                message=request.message,
+                thread_messages=thread.messages,
+                model=request.model,
+                thread_id=thread.id,
+            ):
+                event_data = json.loads(event_str)
+                if event_data.get("type") == "token":
+                    full_content.append(event_data.get("content", ""))
+                    yield f"event: token\ndata: {event_str}\n\n"
+                elif event_data.get("type") == "tool_call":
+                    yield f"event: tool_call\ndata: {event_str}\n\n"
+                elif event_data.get("type") == "tool_result":
+                    yield f"event: tool_result\ndata: {event_str}\n\n"
+                elif event_data.get("type") == "error":
+                    yield f"event: error\ndata: {event_str}\n\n"
+                elif event_data.get("type") == "done":
+                    assistant_content = "".join(full_content)
+                    assistant_msg = Message(
+                        role="assistant",
+                        content=assistant_content,
+                        thread_id=thread.id,
+                    )
+                    await thread_store.add_message(thread.id, assistant_msg)
+                    yield f"event: done\ndata: {json.dumps({'thread_id': thread.id, 'type': 'done'})}\n\n"
+        except Exception as e:
+            logger.error(f"Local chat error: {e}", exc_info=True)
+            yield f"event: error\ndata: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
+            yield f"event: done\ndata: {json.dumps({'thread_id': thread.id, 'type': 'done'})}\n\n"
 
     return StreamingResponse(
         event_generator(),

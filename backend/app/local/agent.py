@@ -59,7 +59,7 @@ class LocalAgent:
             return
 
         from app.local.gateway import local_gateway
-        client = local_gateway.get_client_for_thread(thread_id) if thread_id else None
+        client = local_gateway.get_client_for_thread(thread_id or "")
         if not client:
             yield json.dumps({
                 "type": "token",
