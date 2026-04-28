@@ -1,9 +1,12 @@
 from app.memory.store import memory_store
+import logging
 from app.models.provider import llm_provider
 from langchain_core.messages import HumanMessage, SystemMessage
 import json
 import re
 
+
+logger = logging.getLogger(__name__)
 EXTRACT_SYSTEM = """You analyze conversations to extract user preferences and important context that should be remembered for future interactions.
 
 Extract ONLY:
@@ -59,5 +62,6 @@ async def extract_and_store_memory(
 
         return stored
 
-    except Exception:
+    except Exception as e:
+        logger.debug("Suppressed error in extractor: %s", e)
         return []

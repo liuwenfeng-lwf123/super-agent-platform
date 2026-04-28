@@ -1,0 +1,9 @@
+{
+  "name": "lastn_context",
+  "description": "Keeps only the last N message pairs + the system prompt. Simplest possible Context Engine.",
+  "module": "examples.plugins.lastn_context.plugin",
+  "class": "LastNContextEngine",
+  "init_kwargs": {
+    "keep_pairs": 4
+  }
+}

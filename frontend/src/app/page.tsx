@@ -2,87 +2,165 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
-  Send,
-  Plus,
-  Settings,
-  MessageSquare,
-  Trash2,
-  Moon,
-  Sun,
-  Zap,
-  Bot,
-  User,
-  Loader2,
-  Paperclip,
-  Code2,
-  StopCircle,
-  Monitor,
-  Wifi,
-  WifiOff,
-  Shield,
+  Activity,
 } from "lucide-react";
 import {
   sendMessage,
   fetchThreads,
+  fetchThread,
   deleteThread,
   fetchSkills,
   fetchModels,
-  fetchLocalClients,
   sendLocalMessage,
-  bindLocalThread,
-  setLocalAutoApprove,
+  fetchCustomTools,
+  approvePermissionRequest,
+  denyPermissionRequest,
+  fetchPendingPermissions,
+  setLocalToolPermission,
 } from "@/lib/api";
-import type { ThreadListItem, SSEEventData, SkillConfig, ModelConfig, LocalClient } from "@/types";
+import { isSlashCommand, dispatchSlashCommand, getSlashCompletions, type SlashCommand } from "@/lib/slash";
+import type {
+  ThreadListItem,
+  SSEEventData,
+  SkillConfig,
+  ModelConfig,
+  PromptSuggestionEventData,
+  SpeculationNotice,
+  SpeculationRecord,
+} from "@/types";
 import type { ToolCallInfo } from "@/components/MessageRenderer";
-import { MessageContent, ToolCallsPanel, WebPreviewPanel } from "@/components/MessageRenderer";
-import { FileAttachment, parseFileAttachments } from "@/components/FileAttachment";
+import { WebPreviewPanel } from "@/components/MessageRenderer";
 import { WorkspacePanel } from "@/components/WorkspacePanel";
+import { ToolMonitorPanel } from "@/components/ToolMonitorPanel";
 import dynamic from "next/dynamic";
+import {
+  AGENT_MODE_META,
+  TOOL_NAME_LABELS,
+  pickPreferredModel,
+  buildChatErrorMessage,
+} from "./chat-constants";
+import type { ChatTool, PermissionPrompt } from "./chat-constants";
 
 const SettingsPage = dynamic(() => import("@/components/SettingsPanel"), { ssr: false });
+import { ChatSidebar } from "./ChatSidebar";
+import { LocalPanel } from "./LocalPanel";
+import { ChatHeader } from "./ChatHeader";
+import { ChatInput } from "./ChatInput";
+import { MessageArea } from "./MessageArea";
+import { useSpeculation } from "./useSpeculation";
+import { useLocalMode } from "./useLocalMode";
 
 export default function ChatPage() {
   const [threads, setThreads] = useState<ThreadListItem[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<{ role: string; content: string }[]>([]);
+  const [messages, setMessages] = useState<{ role: string; content: string; _streaming_terminal?: boolean }[]>([]);
   const [input, setInput] = useState("");
+  const [slashCompletions, setSlashCompletions] = useState<SlashCommand[]>([]);
+  const [slashSelectedIdx, setSlashSelectedIdx] = useState(0);
   const [streaming, setStreaming] = useState(false);
   const [streamContent, setStreamContent] = useState("");
-  const [darkMode, setDarkMode] = useState(true);
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("darkMode");
+      return saved !== null ? saved === "true" : true;
+    }
+    return true;
+  });
   const [skills, setSkills] = useState<SkillConfig[]>([]);
+  const [availableTools, setAvailableTools] = useState<ChatTool[]>([]);
   const [models, setModels] = useState<ModelConfig[]>([]);
   const [showSettingsPage, setShowSettingsPage] = useState(false);
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [agentMode, setAgentMode] = useState<"flash" | "standard" | "pro" | "ultra" | "local">("standard");
-  const [localClients, setLocalClients] = useState<LocalClient[]>([]);
-  const [showLocalPanel, setShowLocalPanel] = useState(false);
-  const [agentStatuses, setAgentStatuses] = useState<{ id: string; status: string; task?: string }[]>([]);
+  const [showMonitorPanel, setShowMonitorPanel] = useState(false);
+  const [showSkillPanel, setShowSkillPanel] = useState(false);
+  const [showToolPanel, setShowToolPanel] = useState(false);
+  const [selectedSkillNames, setSelectedSkillNames] = useState<string[]>([]);
+  const [selectedToolNames, setSelectedToolNames] = useState<string[]>([]);
+  const [toolSearch, setToolSearch] = useState("");
+  const [threadSearch, setThreadSearch] = useState("");
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingContent, setEditingContent] = useState("");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [pendingImages, setPendingImages] = useState<string[]>([]);
+  const [agentStatuses, setAgentStatuses] = useState<{ id: string; status: string; task?: string; role?: string; tool_calls?: {tool: string}[]; result_preview?: string }[]>([]);
   const [toolCalls, setToolCalls] = useState<ToolCallInfo[]>([]);
+  const [fileDiffs, setFileDiffs] = useState<import("@/components/DiffViewer").FileDiff[]>([]);
+  const [pendingPermission, setPendingPermission] = useState<PermissionPrompt | null>(null);
+  const [lastUsage, setLastUsage] = useState<{ input_tokens?: number; output_tokens?: number; cost_usd?: number; tool_calls?: number; agents_spawned?: number } | null>(null);
+  const {
+    speculationEnabled,
+    speculationRecord,
+    setSpeculationRecord,
+    speculationDiffs,
+    setSpeculationDiffs,
+    speculationDiffLoading,
+    speculationBusyAction,
+    setSpeculationBusyAction,
+    speculationNotice,
+    setSpeculationNotice,
+    workspaceRefreshToken,
+    setWorkspaceRefreshToken,
+    loadSpeculation,
+    toggleSpeculation,
+    handleRefreshSpeculation,
+    handleAcceptSpeculation,
+    handleDiscardSpeculation,
+    resetSpeculation,
+  } = useSpeculation(activeThreadId);
+
+  const loadThreads = useCallback(async () => {
+    try {
+      const data = await fetchThreads();
+      setThreads(data);
+    } catch {}
+  }, []);
+
+  const {
+    localClients,
+    localAuditLog,
+    toolStats,
+    localShortcuts,
+    localSchedules,
+    showLocalPanel,
+    setShowLocalPanel,
+    localDisconnectNotice,
+    setLocalDisconnectNotice,
+    localPanelMessage,
+    loadLocalClients,
+    loadLocalAuditLog,
+    loadToolStats,
+    loadShortcuts,
+    loadSchedules,
+    handleBindLocalThread,
+    handleSetLocalAutoApprove,
+    handleSetLocalToolPermission,
+  } = useLocalMode({ activeThreadId, setActiveThreadId, loadThreads });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const requestIdRef = useRef(0);
 
   useEffect(() => {
+    document.documentElement.classList.toggle("dark", darkMode);
     loadThreads();
     loadSkills();
+    loadTools();
     loadModels();
-    const interval = setInterval(loadLocalClients, 5000);
-    loadLocalClients();
-    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamContent, toolCalls]);
 
-  const loadThreads = async () => {
-    try {
-      const data = await fetchThreads();
-      setThreads(data);
-    } catch {}
-  };
+  useEffect(() => {
+    // Listen for /clear slash command
+    const handler = () => setMessages([]);
+    window.addEventListener("slash:clear", handler);
+    return () => window.removeEventListener("slash:clear", handler);
+  }, []);
 
   const loadSkills = async () => {
     try {
@@ -91,43 +169,88 @@ export default function ChatPage() {
     } catch {}
   };
 
+  const loadTools = async () => {
+    try {
+      const data = await fetchCustomTools();
+      setAvailableTools(Array.isArray(data.tools) ? data.tools : []);
+    } catch {
+      setAvailableTools([]);
+    }
+  };
+
   const loadModels = async () => {
     try {
       const data = await fetchModels();
       setModels(data);
-      if (data.length > 0) setSelectedModel(data[0].name);
-    } catch {}
-  };
-
-  const loadLocalClients = async () => {
-    try {
-      const data = await fetchLocalClients();
-      setLocalClients(data);
+      if (data.length > 0) {
+        setSelectedModel((current) => {
+          const currentModel = data.find((model: ModelConfig) => model.name === current);
+          if (currentModel?.has_api_key) return current;
+          return pickPreferredModel(data);
+        });
+      }
     } catch {}
   };
 
   const handleNewChat = () => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    setStreaming(false);
     setActiveThreadId(null);
     setMessages([]);
     setStreamContent("");
+    setToolCalls([]);
+    setAgentStatuses([]);
     setPreviewHtml(null);
+    resetSpeculation();
     inputRef.current?.focus();
   };
 
+  const toggleSelectedSkill = (skillName: string) => {
+    setSelectedSkillNames((prev) =>
+      prev.includes(skillName)
+        ? prev.filter((name) => name !== skillName)
+        : [...prev, skillName]
+    );
+  };
+
+  const toggleSelectedTool = (toolName: string) => {
+    setSelectedToolNames((prev) =>
+      prev.includes(toolName)
+        ? prev.filter((name) => name !== toolName)
+        : [...prev, toolName]
+    );
+  };
+
   const handleSelectThread = async (id: string) => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    setStreaming(false);
     setActiveThreadId(id);
     setStreamContent("");
+    setToolCalls([]);
+    setAgentStatuses([]);
     setPreviewHtml(null);
+    setSpeculationNotice(null);
     try {
-      const res = await fetch(`/api/threads/${id}`);
-      const thread = await res.json();
+      const thread = await fetchThread(id);
       setMessages(thread.messages || []);
-    } catch {}
+    } catch {
+      setMessages([]);
+    }
   };
 
   const handleDeleteThread = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    await deleteThread(id);
+    try {
+      await deleteThread(id);
+    } catch {
+      return;
+    }
     if (activeThreadId === id) {
       setActiveThreadId(null);
       setMessages([]);
@@ -140,46 +263,132 @@ export default function ChatPage() {
       abortRef.current.abort();
       abortRef.current = null;
     }
+    setStreaming(false);
   };
 
-  const handleSend = useCallback(async () => {
-    if (!input.trim() || streaming) return;
+  const resolvePendingPermission = async (approve: boolean, alwaysAllow?: boolean) => {
+    if (!pendingPermission) return;
+    const requestId = pendingPermission.request_id;
+    const toolName = pendingPermission.tool;
+    try {
+      if (approve) {
+        if (alwaysAllow && toolName && localClients.length > 0) {
+          await setLocalToolPermission(localClients[0].client_id, toolName, true);
+          await loadLocalClients();
+        }
+        await approvePermissionRequest(requestId);
+      } else {
+        await denyPermissionRequest(requestId);
+      }
+      setPendingPermission((current) => current?.request_id === requestId ? null : current);
+    } catch {
+      setPendingPermission((current) => current?.request_id === requestId ? { ...current, reason: "权限处理失败，请重试" } : current);
+    }
+  };
 
-    const userMsg = { role: "user", content: input.trim() };
-    setMessages((prev) => [...prev, userMsg]);
-    setInput("");
+  const doSend = useCallback(async (messageContent: string, images?: string[]) => {
+    if (!messageContent.trim() || streaming) return;
+
+    const myRequestId = ++requestIdRef.current;
+
     setStreaming(true);
     setStreamContent("");
     setToolCalls([]);
+    setFileDiffs([]);
+    setPendingPermission(null);
     setAgentStatuses([]);
+    setSpeculationDiffs(null);
+    setSpeculationBusyAction(null);
+    setSpeculationNotice(null);
 
     let collected = "";
+    let latestThreadId = activeThreadId || null;
+    let permissionPoll: ReturnType<typeof setInterval> | null = null;
+
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     try {
+      if (agentMode === "local") {
+        const requestStartedAt = Date.now() - 1000;
+        permissionPoll = setInterval(async () => {
+          try {
+            const payload = await fetchPendingPermissions(latestThreadId || activeThreadId || undefined);
+            const requests = Array.isArray(payload?.requests) ? payload.requests : [];
+            const pending = requests
+              .filter((item: PermissionPrompt & { created_at?: string }) => {
+                if (item.status !== "pending") return false;
+                const createdAt = item.created_at ? Date.parse(item.created_at) : Date.now();
+                return Number.isNaN(createdAt) || createdAt >= requestStartedAt;
+              })
+              .sort((a: PermissionPrompt & { created_at?: string }, b: PermissionPrompt & { created_at?: string }) => {
+                const left = a.created_at ? Date.parse(a.created_at) : 0;
+                const right = b.created_at ? Date.parse(b.created_at) : 0;
+                return right - left;
+              })[0];
+            if (pending) {
+              latestThreadId = pending.thread_id || latestThreadId;
+              setPendingPermission((current) => current?.request_id === pending.request_id ? current : pending);
+            }
+          } catch {
+          }
+        }, 1000);
+      }
+
       const sendFn = agentMode === "local" ? sendLocalMessage : sendMessage;
       await sendFn(
         {
           thread_id: activeThreadId || undefined,
-          message: userMsg.content,
+          message: messageContent,
           model: selectedModel || undefined,
+          skills: selectedSkillNames.length > 0 ? selectedSkillNames : undefined,
+          tools: selectedToolNames.length > 0 ? selectedToolNames : undefined,
           mode: agentMode === "local" ? "local" : agentMode,
+          images: images && images.length > 0 ? images : undefined,
+          enable_speculation: speculationEnabled ? undefined : false,
         },
         (event: SSEEventData) => {
           if (event.type === "token" && event.content) {
             collected += event.content;
             setStreamContent(collected);
-          } else if (event.type === "done" && event.thread_id) {
-            setActiveThreadId(event.thread_id);
-            loadThreads();
+          } else if (event.type === "done") {
+            setStreaming(false);
+            setPendingPermission(null);
+            setAgentStatuses([]);
+            if (event.thread_id) {
+              latestThreadId = event.thread_id;
+              setActiveThreadId(event.thread_id);
+              loadThreads();
+            }
+            if (event.usage) {
+              setLastUsage(event.usage);
+            }
           } else if (event.type === "plan" && event.data) {
             const steps = (event.data as { steps?: { id: string; task: string }[] }).steps || [];
             setAgentStatuses(steps.map((s) => ({ id: s.id, status: "pending", task: s.task })));
           } else if (event.type === "agent_status" && event.data) {
-            const d = event.data as { agent_id: string; status: string; task?: string };
+            const d = event.data as { agent_id: string; status: string; task?: string; role?: string; tool_calls?: {tool: string}[]; result_preview?: string };
             setAgentStatuses((prev) => {
               const exists = prev.find((a) => a.id === d.agent_id);
-              if (exists) return prev.map((a) => (a.id === d.agent_id ? { ...a, status: d.status } : a));
-              return [...prev, { id: d.agent_id, status: d.status, task: d.task }];
+              if (exists) return prev.map((a) => (a.id === d.agent_id ? { ...a, status: d.status, ...(d.tool_calls ? { tool_calls: d.tool_calls } : {}), ...(d.result_preview ? { result_preview: d.result_preview } : {}) } : a));
+              return [...prev, { id: d.agent_id, status: d.status, task: d.task, role: d.role }];
+            });
+          } else if (event.type === "file_diff" && event.data) {
+            const d = event.data as unknown as import("@/components/DiffViewer").FileDiff;
+            setFileDiffs((prev) => [...prev, d]);
+          } else if (event.type === "files_changed" && event.data) {
+            const d = event.data as { files: string[]; count: number };
+            const fileList = d.files.map((f: string) => `  • ${f}`).join("\n");
+            setMessages((prev) => [...prev, { role: "assistant", content: `📝 **${d.count} file(s) modified:**\n${fileList}` }]);
+          } else if (event.type === "stream_output" && event.data) {
+            const d = event.data as { stream: string; data: string };
+            const prefix = d.stream === "stderr" ? "[stderr] " : "";
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              if (last?.role === "assistant" && (last as { _streaming_terminal?: boolean })._streaming_terminal) {
+                return [...prev.slice(0, -1), { ...last, content: last.content + prefix + d.data }];
+              }
+              return [...prev, { role: "assistant", content: "```\n" + prefix + d.data, _streaming_terminal: true }];
             });
           } else if (event.type === "tool_call" && event.data) {
             const d = event.data as { tool: string; status: string; input?: string };
@@ -193,31 +402,158 @@ export default function ChatPage() {
                   : tc
               )
             );
+          } else if (event.type === "validation_result" && event.data) {
+            const d = event.data as { tool: string; status: "passed" | "failed" | "skipped"; message?: string; strategy?: string };
+            setToolCalls((prev) => {
+              let updated = false;
+              const next = [...prev];
+              for (let i = next.length - 1; i >= 0; i -= 1) {
+                if (next[i].tool !== d.tool) continue;
+                next[i] = {
+                  ...next[i],
+                  validationStatus: d.status,
+                  validationMessage: d.message,
+                  validationStrategy: d.strategy,
+                };
+                updated = true;
+                break;
+              }
+              if (updated) return next;
+              return [
+                ...prev,
+                {
+                  tool: d.tool,
+                  status: "completed",
+                  validationStatus: d.status,
+                  validationMessage: d.message,
+                  validationStrategy: d.strategy,
+                },
+              ];
+            });
+          } else if (event.type === "permission_request" && event.data) {
+            const d = event.data as unknown as PermissionPrompt;
+            if (d.status === "pending") {
+              setPendingPermission(d);
+            } else {
+              setPendingPermission((current) => current?.request_id === d.request_id ? null : current);
+            }
+          } else if (event.type === "permission_decision" && event.data) {
+            const d = event.data as { request_id?: string };
+            setPendingPermission((current) => current?.request_id === d.request_id ? null : current);
+          } else if (event.type === "prompt_suggestion" && event.data) {
+            const d = event.data as PromptSuggestionEventData;
+            if (d.background) {
+              setSpeculationRecord(d.background);
+            }
+          } else if (event.type === "speculation_state" && event.data) {
+            setSpeculationRecord(event.data as unknown as SpeculationRecord);
+          } else if (event.type === "speculation_hit" && event.data) {
+            setSpeculationRecord(event.data as unknown as SpeculationRecord);
           } else if (event.type === "error") {
-            collected += `\n\n**Error:** ${event.content}`;
+            collected += `\n\n**Error:** ${buildChatErrorMessage(event.content || "未知错误", selectedModel, models)}`;
             setStreamContent(collected);
           }
-        }
+        },
+        undefined,
+        controller.signal,
       );
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === "AbortError") {
         collected += "\n\n*[Stopped by user]*";
       } else {
-        collected += "\n\n**Connection error. Please check if the backend is running.**";
+        const rawMessage = err instanceof Error ? err.message : "Connection error. Please check if the backend is running.";
+        collected += `\n\n**Error:** ${buildChatErrorMessage(rawMessage, selectedModel, models)}`;
       }
       setStreamContent(collected);
+    } finally {
+      if (requestIdRef.current === myRequestId) {
+        abortRef.current = null;
+      }
+      if (permissionPoll) {
+        clearInterval(permissionPoll);
+      }
     }
+
+    // Only update state if this is still the active request
+    // (prevents stale cleanup from overriding a newer request after Stop → resend)
+    if (requestIdRef.current !== myRequestId) return;
 
     setMessages((prev) => [
       ...prev,
       { role: "assistant", content: collected || "No response" },
     ]);
     if (collected) extractHtmlPreview(collected);
+    if (latestThreadId) {
+      void loadSpeculation(latestThreadId);
+    }
     setStreamContent("");
     setStreaming(false);
     setAgentStatuses([]);
-    setToolCalls([]);
-  }, [input, streaming, activeThreadId, selectedModel, agentMode]);
+  }, [streaming, activeThreadId, selectedModel, selectedSkillNames, selectedToolNames, agentMode, loadSpeculation, models]);
+
+  const handleUseSuggestion = useCallback(() => {
+    if (!speculationRecord?.suggestion) return;
+    setInput(speculationRecord.suggestion);
+    inputRef.current?.focus();
+  }, [speculationRecord]);
+
+  const handleSend = useCallback(async () => {
+    if ((!input.trim() && pendingImages.length === 0) || streaming) return;
+    const content = input.trim() || "请看这张图片";
+
+    // Intercept slash commands — dispatch locally, don't hit the LLM
+    if (isSlashCommand(content)) {
+      setInput("");
+      setMessages((prev) => [...prev, { role: "user", content }]);
+      const { output } = await dispatchSlashCommand(content);
+      setMessages((prev) => [...prev, { role: "assistant", content: output }]);
+      return;
+    }
+
+    const imgs = pendingImages.length > 0 ? [...pendingImages] : undefined;
+    setMessages((prev) => [...prev, { role: "user", content: imgs ? `${content}\n\n[${imgs.length} image(s) attached]` : content }]);
+    setInput("");
+    setPendingImages([]);
+    // Refresh thread list after a short delay so the newly saved user message is searchable
+    setTimeout(() => loadThreads(), 1000);
+    await doSend(content, imgs);
+  }, [input, streaming, doSend, pendingImages]);
+
+  const handleRegenerate = useCallback(async () => {
+    if (streaming || messages.length < 2) return;
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
+    if (!lastUserMsg) return;
+    setMessages((prev) => {
+      const lastAssistantIdx = prev.map((m) => m.role).lastIndexOf("assistant");
+      if (lastAssistantIdx >= 0) return prev.slice(0, lastAssistantIdx);
+      return prev;
+    });
+    await doSend(lastUserMsg.content);
+  }, [streaming, messages, doSend]);
+
+  const handleExport = useCallback(() => {
+    if (messages.length === 0) return;
+    const threadTitle = threads.find((t) => t.id === activeThreadId)?.title || "chat";
+    const md = messages
+      .map((m) => `## ${m.role === "user" ? "You" : "Super Agent"}\n\n${m.content}`)
+      .join("\n\n---\n\n");
+    const blob = new Blob([md], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${threadTitle}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [messages, threads, activeThreadId]);
+
+  const handleEditSubmit = useCallback(async (index: number) => {
+    if (!editingContent.trim() || streaming) return;
+    const content = editingContent.trim();
+    setMessages((prev) => [...prev.slice(0, index), { role: "user", content }]);
+    setEditingIndex(null);
+    setEditingContent("");
+    await doSend(content);
+  }, [editingContent, streaming, doSend]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -227,8 +563,10 @@ export default function ChatPage() {
   };
 
   const toggleDark = () => {
-    setDarkMode(!darkMode);
-    document.documentElement.classList.toggle("dark");
+    const next = !darkMode;
+    setDarkMode(next);
+    localStorage.setItem("darkMode", String(next));
+    document.documentElement.classList.toggle("dark", next);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -238,9 +576,12 @@ export default function ChatPage() {
     formData.append("file", file);
     try {
       const res = await fetch("/api/upload", { method: "POST", body: formData });
+      if (!res.ok) throw new Error(`Upload failed (${res.status})`);
       const data = await res.json();
-      setInput((prev) => prev + `\n[Attached file: ${data.filename} (${data.size} bytes)]`);
-    } catch {}
+      setInput((prev) => prev + `\n[已附加文件：${data.filename}（${data.size} 字节）]`);
+    } catch (err) {
+      alert(`文件上传失败：${err instanceof Error ? err.message : "未知错误"}`);
+    }
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -251,297 +592,109 @@ export default function ChatPage() {
     }
   };
 
+  const visibleTools = availableTools.filter((tool) => {
+    const query = toolSearch.trim().toLowerCase();
+    if (!query) return true;
+    return `${tool.name} ${tool.display_name || ""} ${TOOL_NAME_LABELS[tool.name] || ""} ${tool.summary || ""} ${tool.description || ""} ${tool.category || ""}`.toLowerCase().includes(query);
+  });
+
   if (showSettingsPage) {
     return (
       <div className="h-screen" style={{ background: "var(--bg-primary)" }}>
-        <SettingsPage onBack={() => setShowSettingsPage(false)} />
+        <SettingsPage onBack={() => {
+          setShowSettingsPage(false);
+          loadModels();
+        }} />
       </div>
     );
   }
 
   return (
     <div className="flex h-screen" style={{ background: "var(--bg-primary)" }}>
+      {/* Sidebar overlay for mobile */}
+      {sidebarOpen && (
+        <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
+
       {/* Sidebar */}
-      <aside
-        className="w-64 flex-shrink-0 flex flex-col border-r"
-        style={{ borderColor: "var(--border-color)", background: "var(--bg-secondary)" }}
-      >
-        <div className="p-4 flex items-center justify-between border-b" style={{ borderColor: "var(--border-color)" }}>
-          <div className="flex items-center gap-2">
-            <Zap className="w-5 h-5" style={{ color: "var(--accent)" }} />
-            <span className="font-bold text-sm">天工流</span>
-          </div>
-          <button onClick={handleNewChat} className="p-1.5 rounded-lg hover:opacity-80" style={{ background: "var(--accent)", color: "#fff" }}>
-            <Plus className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-2 scrollbar-thin">
-          {threads.map((t) => (
-            <div
-              key={t.id}
-              onClick={() => handleSelectThread(t.id)}
-              className="group flex items-center gap-2 px-3 py-2.5 rounded-lg cursor-pointer mb-1 text-sm transition-colors"
-              style={{
-                background: activeThreadId === t.id ? "var(--accent-light)" : "transparent",
-                color: activeThreadId === t.id ? "var(--accent)" : "var(--text-secondary)",
-              }}
-            >
-              <MessageSquare className="w-4 h-4 flex-shrink-0" />
-              <span className="truncate flex-1">{t.title}</span>
-              <button
-                onClick={(e) => handleDeleteThread(t.id, e)}
-                className="opacity-0 group-hover:opacity-100 p-0.5 hover:text-red-400 transition-opacity"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          ))}
-          {threads.length === 0 && (
-            <p className="text-center text-xs py-8" style={{ color: "var(--text-secondary)" }}>
-              No conversations yet
-            </p>
-          )}
-        </div>
-
-        <div className="p-3 border-t flex items-center justify-between" style={{ borderColor: "var(--border-color)" }}>
-          <button onClick={toggleDark} className="p-2 rounded-lg hover:opacity-80" style={{ color: "var(--text-secondary)" }}>
-            {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          </button>
-          <button onClick={() => setShowSettingsPage(true)} className="p-2 rounded-lg hover:opacity-80" style={{ color: "var(--text-secondary)" }}>
-            <Settings className="w-4 h-4" />
-          </button>
-        </div>
-      </aside>
+      <ChatSidebar
+        threads={threads}
+        activeThreadId={activeThreadId}
+        threadSearch={threadSearch}
+        setThreadSearch={setThreadSearch}
+        sidebarOpen={sidebarOpen}
+        setSidebarOpen={setSidebarOpen}
+        darkMode={darkMode}
+        toggleDark={toggleDark}
+        handleNewChat={handleNewChat}
+        handleSelectThread={handleSelectThread}
+        handleDeleteThread={handleDeleteThread}
+        loadThreads={loadThreads}
+        setShowSettingsPage={setShowSettingsPage}
+      />
 
       {/* Main */}
       <main className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <header className="h-14 flex items-center justify-between px-6 border-b" style={{ borderColor: "var(--border-color)" }}>
-          <div className="flex items-center gap-3">
-            <h1 className="text-sm font-semibold">
-              {activeThreadId ? "Conversation" : "New Chat"}
-            </h1>
-            <div className="flex rounded-lg overflow-hidden border" style={{ borderColor: "var(--border-color)" }}>
-              {(["flash", "standard", "pro", "ultra", "local"] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => setAgentMode(m)}
-                  className="px-2 py-1 text-xs font-medium transition-colors flex items-center gap-1"
-                  style={{
-                    background: agentMode === m ? "var(--accent)" : "transparent",
-                    color: agentMode === m ? "#fff" : "var(--text-secondary)",
-                  }}
-                >
-                  {m === "local" && <Monitor className="w-3 h-3" />}
-                  {m.charAt(0).toUpperCase() + m.slice(1)}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {agentMode === "local" && (
-              <button
-                onClick={() => setShowLocalPanel(!showLocalPanel)}
-                className="flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-lg border transition-colors hover:opacity-80"
-                style={{
-                  borderColor: localClients.length > 0 ? "#22c55e" : "var(--border-color)",
-                  color: localClients.length > 0 ? "#22c55e" : "var(--text-secondary)",
-                  background: localClients.length > 0 ? "rgba(34,197,94,0.1)" : "transparent",
-                }}
-              >
-                {localClients.length > 0 ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
-                {localClients.length > 0 ? `${localClients.length} Client` : "No Client"}
-              </button>
-            )}
-            {streaming && (
-              <button
-                onClick={handleStop}
-                className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg border transition-colors hover:opacity-80"
-                style={{ borderColor: "var(--border-color)", color: "var(--text-secondary)" }}
-              >
-                <StopCircle className="w-3.5 h-3.5" /> Stop
-              </button>
-            )}
-            {models.length > 0 && (
-              <select
-                value={selectedModel}
-                onChange={(e) => setSelectedModel(e.target.value)}
-                className="text-xs px-3 py-1.5 rounded-lg border outline-none"
-                style={{ background: "var(--bg-secondary)", borderColor: "var(--border-color)", color: "var(--text-primary)" }}
-              >
-                {models.map((m) => (
-                  <option key={m.name} value={m.name}>{m.display_name}</option>
-                ))}
-              </select>
-            )}
-          </div>
-        </header>
+        <ChatHeader
+          threads={threads}
+          activeThreadId={activeThreadId}
+          agentMode={agentMode}
+          setAgentMode={setAgentMode}
+          sidebarOpen={sidebarOpen}
+          setSidebarOpen={setSidebarOpen}
+          localClients={localClients}
+          showLocalPanel={showLocalPanel}
+          setShowLocalPanel={setShowLocalPanel}
+          messages={messages}
+          streaming={streaming}
+          models={models}
+          selectedModel={selectedModel}
+          setSelectedModel={setSelectedModel}
+          showMonitorPanel={showMonitorPanel}
+          setShowMonitorPanel={setShowMonitorPanel}
+          speculationEnabled={speculationEnabled}
+          toggleSpeculation={toggleSpeculation}
+          handleRegenerate={handleRegenerate}
+          handleExport={handleExport}
+          handleStop={handleStop}
+        />
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 scrollbar-thin">
-          {messages.length === 0 && !streaming && (
-            <div className="flex flex-col items-center justify-center h-full gap-4">
-              <div className="w-16 h-16 rounded-2xl flex items-center justify-center" style={{ background: "var(--accent-light)" }}>
-                <Bot className="w-8 h-8" style={{ color: "var(--accent)" }} />
-              </div>
-              <h2 className="text-xl font-semibold">天工流</h2>
-              <p className="text-sm max-w-md text-center" style={{ color: "var(--text-secondary)" }}>
-                AI Super Agent — 搜索、编码、创作，一气呵成
-              </p>
-              {agentMode === "local" && localClients.length === 0 && (
-                <div className="mt-2 px-4 py-2 rounded-lg text-xs" style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)" }}>
-                  Local Mode requires a connected client. Run <code className="font-mono">python local_client.py</code> on your computer.
-                </div>
-              )}
-
-              <div className="flex gap-3 mt-2">
-                {([
-                  { mode: "flash", desc: "Fast chat, no tools", icon: "Z" },
-                  { mode: "standard", desc: "Tools + workspace", icon: "S" },
-                  { mode: "pro", desc: "Plan then execute", icon: "P" },
-                  { mode: "ultra", desc: "Multi-agent parallel", icon: "U" },
-                  { mode: "local", desc: "Operate your PC", icon: "L" },
-                ] as const).map((m) => (
-                  <button
-                    key={m.mode}
-                    onClick={() => setAgentMode(m.mode)}
-                    className="flex flex-col items-center gap-1 px-3 py-2 rounded-xl border transition-colors hover:opacity-80"
-                    style={{
-                      borderColor: agentMode === m.mode ? "var(--accent)" : "var(--border-color)",
-                      background: agentMode === m.mode ? "var(--accent-light)" : "var(--bg-secondary)",
-                      color: "var(--text-primary)",
-                    }}
-                  >
-                    <span className="text-xs font-bold" style={{ color: "var(--accent)" }}>{m.icon}</span>
-                    <span className="text-xs font-medium">{m.mode}</span>
-                    <span className="text-[10px]" style={{ color: "var(--text-secondary)" }}>{m.desc}</span>
-                  </button>
-                ))}
-              </div>
-
-              <div className="flex flex-wrap gap-2 mt-3 max-w-lg justify-center">
-                {skills.map((s) => (
-                  <span
-                    key={s.name}
-                    className="px-3 py-1.5 rounded-full text-xs font-medium"
-                    style={{ background: "var(--accent-light)", color: "var(--accent)" }}
-                  >
-                    {s.display_name}
-                  </span>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-2 mt-4 max-w-lg justify-center">
-                {[
-                  { label: "Create a web app", icon: "G" },
-                  { label: "Analyze data with Python", icon: "D" },
-                  { label: "Write a research report", icon: "R" },
-                  { label: "Build presentation slides", icon: "P" },
-                ].map((s) => (
-                  <button
-                    key={s.label}
-                    onClick={() => setInput(s.label)}
-                    className="px-3 py-2 rounded-xl text-xs border transition-colors hover:opacity-80"
-                    style={{ borderColor: "var(--border-color)", background: "var(--bg-secondary)", color: "var(--text-primary)" }}
-                  >
-                    {s.icon} {s.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {messages.map((msg, i) => {
-            const isUser = msg.role === "user";
-            const { text, attachments } = parseFileAttachments(msg.content);
-
-            return (
-              <div key={i} className="flex gap-3 mb-5 max-w-3xl mx-auto">
-                <div
-                  className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-1"
-                  style={{ background: isUser ? "var(--user-bubble)" : "var(--assistant-bubble)" }}
-                >
-                  {isUser ? (
-                    <User className="w-3.5 h-3.5" style={{ color: "var(--user-text)" }} />
-                  ) : (
-                    <Bot className="w-3.5 h-3.5" style={{ color: "var(--accent)" }} />
-                  )}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>
-                    {isUser ? "You" : "Super Agent"}
-                  </div>
-                  {attachments.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mb-2">
-                      {attachments.map((a, j) => (
-                        <FileAttachment key={j} filename={a.filename} size={a.size} />
-                      ))}
-                    </div>
-                  )}
-                  <MessageContent content={text} isUser={isUser} />
-                </div>
-              </div>
-            );
-          })}
-
-          {streaming && toolCalls.length > 0 && (
-            <ToolCallsPanel toolCalls={toolCalls} />
-          )}
-
-          {agentStatuses.length > 0 && (
-            <div className="max-w-3xl mx-auto mb-4 p-3 rounded-xl border" style={{ background: "var(--bg-secondary)", borderColor: "var(--border-color)" }}>
-              <div className="text-xs font-medium mb-2" style={{ color: "var(--accent)" }}>
-                <Code2 className="w-3.5 h-3.5 inline mr-1" />Agent Status
-              </div>
-              <div className="space-y-1.5">
-                {agentStatuses.map((a) => (
-                  <div key={a.id} className="flex items-center gap-2 text-xs">
-                    <span
-                      className={`w-2 h-2 rounded-full ${
-                        a.status === "completed"
-                          ? "bg-green-400"
-                          : a.status === "running"
-                          ? "bg-yellow-400 animate-pulse"
-                          : a.status === "failed"
-                          ? "bg-red-400"
-                          : "bg-gray-400"
-                      }`}
-                    />
-                    <span style={{ color: "var(--text-primary)" }}>{a.id}</span>
-                    <span style={{ color: "var(--text-secondary)" }}>{a.task || a.status}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {streaming && streamContent && (
-            <div className="flex gap-3 mb-5 max-w-3xl mx-auto">
-              <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-1" style={{ background: "var(--assistant-bubble)" }}>
-                <Bot className="w-3.5 h-3.5" style={{ color: "var(--accent)" }} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-medium mb-1" style={{ color: "var(--text-secondary)" }}>Super Agent</div>
-                <MessageContent content={streamContent} />
-              </div>
-            </div>
-          )}
-
-          {streaming && !streamContent && agentStatuses.length === 0 && toolCalls.length === 0 && (
-            <div className="flex gap-3 mb-5 max-w-3xl mx-auto">
-              <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 mt-1" style={{ background: "var(--assistant-bubble)" }}>
-                <Bot className="w-3.5 h-3.5" style={{ color: "var(--accent)" }} />
-              </div>
-              <div className="flex items-center gap-1.5 py-2">
-                <div className="w-2 h-2 rounded-full typing-dot" style={{ background: "var(--accent)" }} />
-                <div className="w-2 h-2 rounded-full typing-dot" style={{ background: "var(--accent)" }} />
-                <div className="w-2 h-2 rounded-full typing-dot" style={{ background: "var(--accent)" }} />
-              </div>
-            </div>
-          )}
-
-          <div ref={messagesEndRef} />
-        </div>
+        <MessageArea
+          messages={messages}
+          streaming={streaming}
+          streamContent={streamContent}
+          agentMode={agentMode}
+          localClients={localClients}
+          localDisconnectNotice={localDisconnectNotice}
+          setLocalDisconnectNotice={setLocalDisconnectNotice}
+          skills={skills}
+          setInput={setInput}
+          setAgentMode={setAgentMode}
+          editingIndex={editingIndex}
+          setEditingIndex={setEditingIndex}
+          editingContent={editingContent}
+          setEditingContent={setEditingContent}
+          handleEditSubmit={handleEditSubmit}
+          toolCalls={toolCalls}
+          fileDiffs={fileDiffs}
+          pendingPermission={pendingPermission}
+          resolvePendingPermission={resolvePendingPermission}
+          agentStatuses={agentStatuses}
+          lastUsage={lastUsage}
+          speculationEnabled={speculationEnabled}
+          speculationRecord={speculationRecord}
+          speculationDiffs={speculationDiffs}
+          speculationDiffLoading={speculationDiffLoading}
+          speculationBusyAction={speculationBusyAction}
+          speculationNotice={speculationNotice}
+          handleUseSuggestion={handleUseSuggestion}
+          handleRefreshSpeculation={handleRefreshSpeculation}
+          handleAcceptSpeculation={handleAcceptSpeculation}
+          handleDiscardSpeculation={handleDiscardSpeculation}
+          messagesEndRef={messagesEndRef}
+        />
 
         {/* Web Preview Panel */}
         {previewHtml && (
@@ -549,148 +702,79 @@ export default function ChatPage() {
         )}
 
         {/* Input */}
-        <div className="px-6 pb-5">
-          <div className="max-w-3xl mx-auto relative flex items-end gap-2">
-            <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileUpload} />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="p-2.5 rounded-xl border flex-shrink-0"
-              style={{ background: "var(--bg-secondary)", borderColor: "var(--border-color)", color: "var(--text-secondary)" }}
-              title="Upload file"
-            >
-              <Paperclip className="w-4 h-4" />
-            </button>
-            <div className="flex-1 relative">
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder={agentMode === "local" ? "Local Mode: Ask AI to operate your computer..." : "Send a message... Try 'search AI news' or 'run python code'"}
-                rows={1}
-                className="w-full pl-4 pr-12 py-3 rounded-xl border text-sm resize-none outline-none focus:ring-2 transition-shadow"
-                style={{
-                  background: "var(--bg-secondary)",
-                  borderColor: "var(--border-color)",
-                  color: "var(--text-primary)",
-                  minHeight: "48px",
-                  maxHeight: "160px",
-                }}
-                onInput={(e) => {
-                  const el = e.target as HTMLTextAreaElement;
-                  el.style.height = "48px";
-                  el.style.height = Math.min(el.scrollHeight, 160) + "px";
-                }}
-              />
-              <button
-                onClick={streaming ? handleStop : handleSend}
-                disabled={!streaming && !input.trim()}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded-lg disabled:opacity-30 transition-opacity"
-                style={{ background: "var(--accent)", color: "#fff" }}
-              >
-                {streaming ? <StopCircle className="w-4 h-4" /> : <Send className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
-        </div>
+        <ChatInput
+          input={input}
+          setInput={setInput}
+          pendingImages={pendingImages}
+          setPendingImages={setPendingImages}
+          streaming={streaming}
+          agentMode={agentMode}
+          slashCompletions={slashCompletions}
+          setSlashCompletions={setSlashCompletions}
+          slashSelectedIdx={slashSelectedIdx}
+          setSlashSelectedIdx={setSlashSelectedIdx}
+          getSlashCompletions={getSlashCompletions}
+          skills={skills}
+          selectedSkillNames={selectedSkillNames}
+          toggleSelectedSkill={toggleSelectedSkill}
+          setSelectedSkillNames={setSelectedSkillNames}
+          showSkillPanel={showSkillPanel}
+          setShowSkillPanel={setShowSkillPanel}
+          availableTools={availableTools}
+          visibleTools={visibleTools}
+          selectedToolNames={selectedToolNames}
+          toggleSelectedTool={toggleSelectedTool}
+          setSelectedToolNames={setSelectedToolNames}
+          showToolPanel={showToolPanel}
+          setShowToolPanel={setShowToolPanel}
+          toolSearch={toolSearch}
+          setToolSearch={setToolSearch}
+          handleSend={handleSend}
+          handleStop={handleStop}
+          handleKeyDown={handleKeyDown}
+          handleFileUpload={handleFileUpload}
+          inputRef={inputRef}
+          fileInputRef={fileInputRef}
+        />
       </main>
 
       {/* Workspace Panel */}
-      <WorkspacePanel threadId={activeThreadId} onPreviewHtml={(html) => setPreviewHtml(html)} />
+      <WorkspacePanel threadId={activeThreadId} refreshToken={workspaceRefreshToken} onPreviewHtml={(html) => setPreviewHtml(html)} />
+
+      {showMonitorPanel && (
+        <div className="w-[420px] max-w-[42vw] flex-shrink-0 flex flex-col border-l" style={{ borderColor: "var(--border-color)", background: "var(--bg-secondary)" }}>
+          <div className="p-3 border-b flex items-center justify-between" style={{ borderColor: "var(--border-color)" }}>
+            <div className="flex items-center gap-2">
+              <Activity className="w-4 h-4" style={{ color: "var(--accent)" }} />
+              <span className="text-sm font-semibold">后台监控</span>
+            </div>
+            <button onClick={() => setShowMonitorPanel(false)} className="text-xs" style={{ color: "var(--text-secondary)" }}>关闭</button>
+          </div>
+          <ToolMonitorPanel compact activeThreadId={activeThreadId} threads={threads} />
+        </div>
+      )}
 
       {/* Local Mode Panel */}
       {showLocalPanel && agentMode === "local" && (
-        <div className="w-80 flex-shrink-0 flex flex-col border-l" style={{ borderColor: "var(--border-color)", background: "var(--bg-secondary)" }}>
-          <div className="p-3 border-b flex items-center justify-between" style={{ borderColor: "var(--border-color)" }}>
-            <div className="flex items-center gap-2">
-              <Monitor className="w-4 h-4" style={{ color: "var(--accent)" }} />
-              <span className="text-sm font-semibold">Local Mode</span>
-            </div>
-            <button onClick={() => setShowLocalPanel(false)} className="text-xs" style={{ color: "var(--text-secondary)" }}>Close</button>
-          </div>
-
-          <div className="p-3 space-y-3 flex-1 overflow-y-auto">
-            <div>
-              <div className="text-xs font-medium mb-2" style={{ color: "var(--text-secondary)" }}>Connection Status</div>
-              {localClients.length === 0 ? (
-                <div className="p-3 rounded-lg text-xs space-y-2" style={{ background: "var(--bg-primary)", border: "1px dashed var(--border-color)" }}>
-                  <div className="flex items-center gap-2" style={{ color: "var(--text-secondary)" }}>
-                    <WifiOff className="w-4 h-4" /> No client connected
-                  </div>
-                  <p style={{ color: "var(--text-secondary)" }}>Run this on your computer:</p>
-                  <code className="block p-2 rounded text-xs" style={{ background: "rgba(0,0,0,0.3)", color: "#22c55e" }}>
-                    python local_client.py
-                  </code>
-                </div>
-              ) : (
-                localClients.map((c) => (
-                  <div key={c.client_id} className="p-3 rounded-lg text-xs space-y-1.5" style={{ background: "var(--bg-primary)" }}>
-                    <div className="flex items-center gap-2">
-                      <Wifi className="w-3 h-3" style={{ color: "#22c55e" }} />
-                      <span className="font-medium" style={{ color: "var(--text-primary)" }}>{c.info.hostname || c.client_id}</span>
-                    </div>
-                    <div style={{ color: "var(--text-secondary)" }}>
-                      {c.info.os} {c.info.arch} | Python {c.info.python}
-                    </div>
-                    {activeThreadId && (
-                      <button
-                        onClick={() => bindLocalThread(activeThreadId, c.client_id)}
-                        className="mt-1 px-2 py-1 rounded text-xs font-medium"
-                        style={{ background: "var(--accent)", color: "#fff" }}
-                      >
-                        Bind to this thread
-                      </button>
-                    )}
-                    <div className="flex items-center gap-2 mt-1">
-                      <Shield className="w-3 h-3" style={{ color: "var(--text-secondary)" }} />
-                      <span style={{ color: "var(--text-secondary)" }}>Auto-approve:</span>
-                      <button
-                        onClick={() => setLocalAutoApprove(c.client_id, !c.auto_approve)}
-                        className="px-2 py-0.5 rounded text-xs font-medium"
-                        style={{
-                          background: c.auto_approve ? "#ef4444" : "var(--bg-secondary)",
-                          color: c.auto_approve ? "#fff" : "var(--text-secondary)",
-                          border: c.auto_approve ? "none" : "1px solid var(--border-color)",
-                        }}
-                      >
-                        {c.auto_approve ? "ON" : "OFF"}
-                      </button>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div>
-              <div className="text-xs font-medium mb-2" style={{ color: "var(--text-secondary)" }}>How it works</div>
-              <div className="text-xs space-y-1.5" style={{ color: "var(--text-secondary)" }}>
-                <p>1. Run <code style={{ color: "#22c55e" }}>python local_client.py</code> on your computer</p>
-                <p>2. AI sends commands to your computer</p>
-                <p>3. You approve each action before it runs</p>
-                <p>4. Enable auto-approve to skip confirmation</p>
-              </div>
-            </div>
-
-            <div>
-              <div className="text-xs font-medium mb-2" style={{ color: "var(--text-secondary)" }}>Capabilities</div>
-              <div className="space-y-1">
-                {[
-                  { icon: "$", label: "Run terminal commands" },
-                  { icon: "R", label: "Read any file" },
-                  { icon: "W", label: "Write/edit files" },
-                  { icon: "L", label: "Browse file system" },
-                  { icon: "P", label: "Execute Python" },
-                  { icon: "O", label: "Open applications" },
-                ].map((cap) => (
-                  <div key={cap.label} className="flex items-center gap-2 text-xs">
-                    <span className="w-5 h-5 rounded flex items-center justify-center text-xs font-bold" style={{ background: "var(--accent-light)", color: "var(--accent)" }}>{cap.icon}</span>
-                    <span style={{ color: "var(--text-primary)" }}>{cap.label}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
+        <LocalPanel
+          localClients={localClients}
+          localAuditLog={localAuditLog}
+          toolStats={toolStats}
+          localShortcuts={localShortcuts}
+          localSchedules={localSchedules}
+          localPanelMessage={localPanelMessage}
+          activeThreadId={activeThreadId}
+          setShowLocalPanel={setShowLocalPanel}
+          handleBindLocalThread={handleBindLocalThread}
+          handleSetLocalAutoApprove={handleSetLocalAutoApprove}
+          handleSetLocalToolPermission={handleSetLocalToolPermission}
+          loadLocalClients={loadLocalClients}
+          loadLocalAuditLog={loadLocalAuditLog}
+          loadToolStats={loadToolStats}
+          loadShortcuts={loadShortcuts}
+          loadSchedules={loadSchedules}
+          setInput={setInput}
+        />
       )}
     </div>
   );

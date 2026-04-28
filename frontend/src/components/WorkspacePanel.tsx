@@ -21,6 +21,7 @@ import type { WorkspaceFile } from "@/types";
 interface WorkspacePanelProps {
   threadId: string | null;
   onPreviewHtml?: (html: string) => void;
+  refreshToken?: number;
 }
 
 function getFileIcon(name: string, isDir: boolean) {
@@ -41,7 +42,7 @@ function isPreviewable(name: string) {
   return ["html", "htm", "md", "txt", "json", "js", "ts", "py", "css", "svg", "xml", "yaml", "yml"].includes(ext);
 }
 
-export function WorkspacePanel({ threadId, onPreviewHtml }: WorkspacePanelProps) {
+export function WorkspacePanel({ threadId, onPreviewHtml, refreshToken = 0 }: WorkspacePanelProps) {
   const [files, setFiles] = useState<WorkspaceFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [currentPath, setCurrentPath] = useState(".");
@@ -50,7 +51,7 @@ export function WorkspacePanel({ threadId, onPreviewHtml }: WorkspacePanelProps)
 
   useEffect(() => {
     if (threadId) loadFiles();
-  }, [threadId, currentPath]);
+  }, [threadId, currentPath, refreshToken]);
 
   const loadFiles = async () => {
     if (!threadId) return;
@@ -110,7 +111,7 @@ export function WorkspacePanel({ threadId, onPreviewHtml }: WorkspacePanelProps)
         </div>
         <div className="flex-1 flex items-center justify-center p-4">
           <p className="text-xs text-center" style={{ color: "var(--text-secondary)" }}>
-            Start a conversation to see workspace files
+            先开始一段对话，随后这里会显示工作区文件
           </p>
         </div>
       </div>
@@ -132,7 +133,7 @@ export function WorkspacePanel({ threadId, onPreviewHtml }: WorkspacePanelProps)
           </button>
         </div>
         <div className="flex items-center gap-1 mt-1 text-xs flex-wrap" style={{ color: "var(--text-secondary)" }}>
-          <button onClick={() => setCurrentPath(".")} className="hover:opacity-70">root</button>
+          <button onClick={() => setCurrentPath(".")} className="hover:opacity-70">根目录</button>
           {pathParts.map((part, i) => (
             <React.Fragment key={i}>
               <ChevronRight className="w-3 h-3" />
@@ -187,7 +188,7 @@ export function WorkspacePanel({ threadId, onPreviewHtml }: WorkspacePanelProps)
                   onClick={(e) => { e.stopPropagation(); handlePreview(file); }}
                   className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:opacity-70"
                   style={{ color: "var(--accent)" }}
-                  title="Preview"
+                  title="预览"
                 >
                   <Eye className="w-3 h-3" />
                 </button>
@@ -208,7 +209,7 @@ export function WorkspacePanel({ threadId, onPreviewHtml }: WorkspacePanelProps)
         })}
         {files.length === 0 && !loading && (
           <p className="text-xs text-center py-4" style={{ color: "var(--text-secondary)" }}>
-            Empty workspace
+            当前工作区为空
           </p>
         )}
       </div>
@@ -223,12 +224,14 @@ export function WorkspacePanel({ threadId, onPreviewHtml }: WorkspacePanelProps)
               {isHtmlFile(previewFile.name) && (
                 <button
                   onClick={() => {
-                    const win = window.open("", "_blank");
-                    if (win) { win.document.write(previewFile.content); win.document.close(); }
+                    const blob = new Blob([previewFile.content], { type: "text/html" });
+                    const url = URL.createObjectURL(blob);
+                    window.open(url, "_blank", "noopener,noreferrer");
+                    setTimeout(() => URL.revokeObjectURL(url), 5000);
                   }}
                   className="p-0.5 rounded hover:opacity-70"
                   style={{ color: "var(--text-secondary)" }}
-                  title="Open in new tab"
+                  title="在新标签页打开"
                 >
                   <Maximize2 className="w-3 h-3" />
                 </button>
@@ -254,7 +257,7 @@ export function WorkspacePanel({ threadId, onPreviewHtml }: WorkspacePanelProps)
               className="p-2 text-[10px] font-mono overflow-auto max-h-48 whitespace-pre-wrap"
               style={{ color: "var(--text-secondary)", background: "var(--bg-primary)" }}
             >
-              {previewFile.content.length > 3000 ? previewFile.content.slice(0, 3000) + "\n... (truncated)" : previewFile.content}
+              {previewFile.content.length > 3000 ? previewFile.content.slice(0, 3000) + "\n...（内容已截断）" : previewFile.content}
             </pre>
           )}
         </div>

@@ -21,6 +21,9 @@ class Thread(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: datetime = Field(default_factory=datetime.now)
     metadata: dict = Field(default_factory=dict)
+    # Session lineage (Hermes pattern)
+    parent_id: Optional[str] = None           # ID of parent session (fork/compact origin)
+    compact_summary: Optional[str] = None     # summary carried from parent on compaction
 
 
 class ChatRequest(BaseModel):
@@ -28,7 +31,11 @@ class ChatRequest(BaseModel):
     message: str
     model: Optional[str] = None
     skills: Optional[list[str]] = None
+    tools: Optional[list[str]] = None
+    disabled_tools: Optional[list[str]] = None
     mode: Optional[str] = "standard"
+    images: Optional[list[str]] = None  # base64-encoded image data URLs
+    enable_speculation: Optional[bool] = None  # None = use server default
 
 
 class MemoryEntry(BaseModel):

@@ -1,0 +1,52 @@
+# =============================================================================
+# Super Agent Platform — Sandbox Container Image
+# Build: docker build -t super-agent-sandbox -f Dockerfile.sandbox .
+# =============================================================================
+FROM python:3.11-slim AS base
+
+# System deps: Node.js 20, common utilities
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    git \
+    bash \
+    ca-certificates \
+    gnupg \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+       | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
+       > /etc/apt/sources.list.d/nodesource.list \
+    && apt-get update && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g npm@latest \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Common Python packages for data analysis / visualization
+RUN pip install --no-cache-dir \
+    numpy \
+    pandas \
+    matplotlib \
+    seaborn \
+    scipy \
+    requests \
+    httpx \
+    beautifulsoup4 \
+    lxml \
+    Pillow \
+    python-pptx \
+    python-docx \
+    openpyxl \
+    tabulate \
+    pyyaml \
+    jinja2 \
+    markdown
+
+# Create non-root user
+RUN useradd -m -s /bin/bash sandbox && \
+    mkdir -p /thread/workspace /thread/uploads /thread/outputs /thread/.cache && \
+    chown -R sandbox:sandbox /thread
+
+USER sandbox
+WORKDIR /thread/workspace
+
+# Default entrypoint (overridden per execution)
+CMD ["bash"]

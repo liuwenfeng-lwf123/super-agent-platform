@@ -1,0 +1,111 @@
+{
+  "name": "tiangongflow",
+  "displayName": "TianGongFlow - AI Super Agent",
+  "description": "Interact with TianGongFlow AI agent directly from VS Code",
+  "version": "0.1.0",
+  "publisher": "tiangongflow",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["AI", "Chat"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "tiangongflow.sendMessage",
+        "title": "TianGongFlow: Send Message"
+      },
+      {
+        "command": "tiangongflow.explainSelection",
+        "title": "TianGongFlow: Explain Selection"
+      },
+      {
+        "command": "tiangongflow.fixSelection",
+        "title": "TianGongFlow: Fix Selection"
+      },
+      {
+        "command": "tiangongflow.refactorSelection",
+        "title": "TianGongFlow: Refactor Selection"
+      },
+      {
+        "command": "tiangongflow.openPanel",
+        "title": "TianGongFlow: Open Chat Panel"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "tiangongflow.explainSelection",
+          "when": "editorHasSelection",
+          "group": "tiangongflow@1"
+        },
+        {
+          "command": "tiangongflow.fixSelection",
+          "when": "editorHasSelection",
+          "group": "tiangongflow@2"
+        },
+        {
+          "command": "tiangongflow.refactorSelection",
+          "when": "editorHasSelection",
+          "group": "tiangongflow@3"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "tiangongflow",
+          "title": "TianGongFlow",
+          "icon": "$(hubot)"
+        }
+      ]
+    },
+    "views": {
+      "tiangongflow": [
+        {
+          "type": "webview",
+          "id": "tiangongflow.chatPanel",
+          "name": "Chat"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "TianGongFlow",
+      "properties": {
+        "tiangongflow.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:8001",
+          "description": "Backend server URL"
+        },
+        "tiangongflow.apiToken": {
+          "type": "string",
+          "default": "",
+          "description": "API authentication token (leave empty if auth disabled)"
+        },
+        "tiangongflow.model": {
+          "type": "string",
+          "default": "",
+          "description": "Default model override (empty = use server default)"
+        },
+        "tiangongflow.mode": {
+          "type": "string",
+          "enum": ["flash", "standard", "pro", "ultra"],
+          "default": "standard",
+          "description": "Agent mode"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.3.0"
+  }
+}

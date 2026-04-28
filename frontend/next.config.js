@@ -1,5 +1,8 @@
 /** @type {import('next').NextConfig} */
+const distDir = process.env.NEXT_DIST_DIR;
+
 const nextConfig = {
+  ...(distDir ? { distDir } : {}),
   async rewrites() {
     return [
       {

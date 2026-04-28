@@ -6,12 +6,13 @@
 
 # Next.js
 .next/
+.next-quality-gate/
+build-quality-gate/
 
-# Runtime data
-backend/data/threads/
-backend/data/workspaces/
-backend/data/memory/
-backend/data/uploads/
+# Runtime data (NEVER commit user threads, credentials, transcripts, etc.)
+backend/data/
+data/
+!backend/examples/
 
 # IDE and Editors
 **/.idea/

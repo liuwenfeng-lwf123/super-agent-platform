@@ -1,0 +1,9 @@
+{
+  "name": "keyword_memory",
+  "description": "Simple keyword-indexed in-memory provider. Good demo / starting point for a custom provider.",
+  "module": "examples.plugins.keyword_memory.plugin",
+  "class": "KeywordMemoryProvider",
+  "init_kwargs": {
+    "max_entries": 1000
+  }
+}

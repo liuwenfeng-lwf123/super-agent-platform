@@ -1,10 +1,12 @@
 from app.models.schemas import SkillConfig
 from app.models.provider import llm_provider
 from app.agents.tools import set_thread_context
-from app.sandbox.manager import sandbox_executor
 from app.skills.search import web_search_tool
 from langchain_core.messages import HumanMessage, SystemMessage
-from langgraph.prebuilt import create_react_agent
+try:
+    from langchain.agents import create_agent as create_react_agent
+except ImportError:  # pragma: no cover - older langchain fallback
+    from langgraph.prebuilt import create_react_agent
 from app.agents.tools import ALL_TOOLS
 import os
 import json
@@ -57,7 +59,7 @@ class SkillWorkflow:
 
 DEEP_RESEARCH = SkillWorkflow(
     name="deep-research",
-    display_name="Deep Research",
+    display_name="深度研究",
     description="Conduct deep research on a topic with multi-source analysis and generate a comprehensive report",
     system_prompt="""You are a deep research specialist. Your job is to conduct thorough, multi-source research on the given topic.
 
@@ -86,7 +88,7 @@ Respond in the same language as the user's question.""",
 
 WEB_PAGE = SkillWorkflow(
     name="web-page",
-    display_name="Web Page Creation",
+    display_name="网页创建",
     description="Create beautiful, responsive web pages and web applications",
     system_prompt="""You are a web development expert. Create modern, responsive web pages.
 
@@ -116,7 +118,7 @@ Respond in the same language as the user's question.""",
 
 REPORT_GENERATION = SkillWorkflow(
     name="report-generation",
-    display_name="Report Generation",
+    display_name="报告生成",
     description="Generate professional structured reports and documents",
     system_prompt="""You are a report generation specialist. Create well-structured, professional reports.
 
@@ -145,7 +147,7 @@ Respond in the same language as the user's question.""",
 
 SLIDE_CREATION = SkillWorkflow(
     name="slide-creation",
-    display_name="Slide Creation",
+    display_name="演示文稿",
     description="Create beautiful presentation slides as HTML",
     system_prompt="""You are a presentation design expert. Create beautiful, professional slides as a single HTML file.
 
@@ -174,7 +176,7 @@ Respond in the same language as the user's question.""",
 
 DATA_ANALYSIS = SkillWorkflow(
     name="data-analysis",
-    display_name="Data Analysis",
+    display_name="数据分析",
     description="Analyze data, create visualizations, and generate insights",
     system_prompt="""You are a data analysis expert. Analyze data, create visualizations, and generate insights.
 
@@ -244,8 +246,10 @@ async def execute_skill(
     if thread_id:
         set_thread_context(thread_id)
 
+    from app.agents.tools import get_all_tools
+    tools = get_all_tools()
     chat_model = llm_provider.get_chat_model(model, streaming=True)
-    agent = create_react_agent(chat_model, ALL_TOOLS)
+    agent = create_react_agent(chat_model, tools)
 
     lc_messages = [
         SystemMessage(content=skill.system_prompt),

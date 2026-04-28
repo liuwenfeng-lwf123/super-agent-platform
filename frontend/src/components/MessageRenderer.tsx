@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
+import { summarizeToolValidation } from "@/lib/toolValidation";
 import {
   ChevronDown,
   ChevronRight,
@@ -17,6 +18,7 @@ import {
   Globe,
   FileText,
   Brain,
+  Monitor,
 } from "lucide-react";
 
 function InlineCode({ children }: { children?: React.ReactNode }) {
@@ -113,7 +115,8 @@ function getToolIcon(tool: string) {
   if (t.includes("python") || t.includes("javascript") || t.includes("execute")) return Terminal;
   if (t.includes("code") || t.includes("sandbox")) return Code2;
   if (t.includes("preview") || t.includes("html") || t.includes("web")) return Globe;
-  if (t.includes("file") || t.includes("read") || t.includes("write")) return FileText;
+  if (t.includes("file") || t.includes("read") || t.includes("write") || t.includes("list_file")) return FileText;
+  if (t.includes("system_info") || t.includes("open_app")) return Monitor;
   return Wrench;
 }
 
@@ -121,8 +124,16 @@ function getToolLabel(tool: string) {
   const t = tool.toLowerCase();
   if (t.includes("web_search")) return "Web Search";
   if (t.includes("search")) return "Search";
-  if (t.includes("execute_python")) return "Run Python";
+  if (t.includes("execute_python") || t === "local_execute_python") return "Run Python";
   if (t.includes("execute_javascript")) return "Run JavaScript";
+  if (t === "local_execute_bash") return "Run Bash (Local)";
+  if (t === "local_read_file") return "Read File (Local)";
+  if (t === "local_write_file") return "Write File (Local)";
+  if (t === "local_list_files") return "List Files (Local)";
+  if (t === "local_open_app") return "Open App (Local)";
+  if (t === "local_get_system_info") return "System Info (Local)";
+  if (t === "local_upload_to_workspace") return "Upload File (Local)";
+  if (t === "local_download_from_workspace") return "Download File (Local)";
   if (t.includes("python")) return "Python";
   if (t.includes("javascript")) return "JavaScript";
   if (t.includes("calculate")) return "Calculate";
@@ -135,6 +146,9 @@ export interface ToolCallInfo {
   status: string;
   input?: string;
   output?: string;
+  validationStatus?: "passed" | "failed" | "skipped";
+  validationMessage?: string;
+  validationStrategy?: string;
 }
 
 function ToolCallCard({ tc }: { tc: ToolCallInfo }) {
@@ -142,6 +156,13 @@ function ToolCallCard({ tc }: { tc: ToolCallInfo }) {
   const Icon = getToolIcon(tc.tool);
   const label = getToolLabel(tc.tool);
   const isRunning = tc.status === "running";
+  const validationTone = tc.validationStatus === "passed"
+    ? { border: "rgba(34,197,94,0.28)", background: "rgba(34,197,94,0.08)", color: "#22c55e", label: "验证通过" }
+    : tc.validationStatus === "failed"
+    ? { border: "rgba(239,68,68,0.28)", background: "rgba(239,68,68,0.08)", color: "#ef4444", label: "验证失败" }
+    : tc.validationStatus === "skipped"
+    ? { border: "rgba(245,158,11,0.28)", background: "rgba(245,158,11,0.08)", color: "#f59e0b", label: "验证跳过" }
+    : null;
 
   return (
     <div
@@ -179,6 +200,36 @@ function ToolCallCard({ tc }: { tc: ToolCallInfo }) {
           {tc.input.length > 150 ? tc.input.slice(0, 150) + "..." : tc.input}
         </div>
       )}
+      {validationTone && tc.validationMessage && (
+        <div
+          className="mt-2 rounded-lg border px-2.5 py-2"
+          style={{
+            borderColor: validationTone.border,
+            background: validationTone.background,
+          }}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <div className="text-[11px] font-semibold" style={{ color: validationTone.color }}>
+              {validationTone.label}
+            </div>
+            {tc.validationStrategy && (
+              <span
+                className="px-1.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wide"
+                style={{
+                  background: "rgba(99,102,241,0.10)",
+                  border: "1px solid rgba(99,102,241,0.22)",
+                  color: "var(--accent)",
+                }}
+              >
+                {tc.validationStrategy}
+              </span>
+            )}
+          </div>
+          <div className="text-xs leading-relaxed" style={{ color: "var(--text-secondary)" }}>
+            {tc.validationMessage}
+          </div>
+        </div>
+      )}
       {tc.output && (
         <div className="mt-2">
           <button
@@ -206,14 +257,47 @@ function ToolCallCard({ tc }: { tc: ToolCallInfo }) {
 export function ToolCallsPanel({ toolCalls }: { toolCalls: ToolCallInfo[] }) {
   if (toolCalls.length === 0) return null;
 
+  const validationSummary = summarizeToolValidation(toolCalls);
+  const validationCounts = validationSummary.counts;
+
   return (
     <div
       className="max-w-3xl mx-auto mb-4 p-3 rounded-xl border"
       style={{ background: "var(--bg-secondary)", borderColor: "var(--border-color)" }}
     >
-      <div className="flex items-center gap-1.5 text-xs font-medium mb-2" style={{ color: "var(--accent)" }}>
-        <Wrench className="w-3.5 h-3.5" />
-        <span>Tool Calls ({toolCalls.length})</span>
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <div className="flex items-center gap-1.5 text-xs font-medium" style={{ color: "var(--accent)" }}>
+          <Wrench className="w-3.5 h-3.5" />
+          <span>Tool Calls ({toolCalls.length})</span>
+        </div>
+        {(validationCounts.passed > 0 || validationCounts.failed > 0 || validationCounts.skipped > 0 || validationSummary.strategies.length > 0) && (
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+            {validationCounts.passed > 0 && (
+              <span className="px-2 py-0.5 rounded-full" style={{ background: "rgba(34,197,94,0.10)", color: "#22c55e" }}>
+                通过 {validationCounts.passed}
+              </span>
+            )}
+            {validationCounts.failed > 0 && (
+              <span className="px-2 py-0.5 rounded-full" style={{ background: "rgba(239,68,68,0.10)", color: "#ef4444" }}>
+                失败 {validationCounts.failed}
+              </span>
+            )}
+            {validationCounts.skipped > 0 && (
+              <span className="px-2 py-0.5 rounded-full" style={{ background: "rgba(245,158,11,0.10)", color: "#f59e0b" }}>
+                跳过 {validationCounts.skipped}
+              </span>
+            )}
+            {validationSummary.strategies.map((item) => (
+              <span
+                key={item.strategy}
+                className="px-2 py-0.5 rounded-full"
+                style={{ background: "rgba(99,102,241,0.10)", color: "var(--accent)" }}
+              >
+                {item.strategy} {item.count}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
       <div className="space-y-2">
         {toolCalls.map((tc, i) => (
@@ -272,6 +356,18 @@ export function MessageContent({ content, isUser }: MessageContentProps) {
                   style={{ color: "var(--accent)", textDecoration: "underline" }}
                 >
                   {children}
+                </a>
+              );
+            },
+            img({ src, alt }) {
+              return (
+                <a href={src || "#"} target="_blank" rel="noopener noreferrer">
+                  <img
+                    src={src || ""}
+                    alt={alt || "image"}
+                    className="my-3 max-w-full rounded-xl border"
+                    style={{ borderColor: "var(--border-color)" }}
+                  />
                 </a>
               );
             },
