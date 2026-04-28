@@ -27,7 +27,7 @@ import { SpeculationPanel } from "@/components/SpeculationPanel";
 import DiffViewer from "@/components/DiffViewer";
 
 interface MessageAreaProps {
-  messages: { role: string; content: string; _streaming_terminal?: boolean }[];
+  messages: { role: string; content: string; _streaming_terminal?: boolean; usage?: { input_tokens?: number; output_tokens?: number; cost_usd?: number; tool_calls?: number; agents_spawned?: number } }[];
   streaming: boolean;
   streamContent: string;
   agentMode: string;
@@ -253,6 +253,14 @@ export function MessageArea({
                     </div>
                   ) : (
                     <MessageContent content={text} isUser={isUser} />
+                  )}
+                  {!isUser && msg.usage && (msg.usage.cost_usd || msg.usage.input_tokens) && (
+                    <div className="mt-1.5 flex items-center gap-2 text-[10px]" style={{ color: "var(--text-secondary)", opacity: 0.7 }}>
+                      {msg.usage.input_tokens ? <span>📥 {msg.usage.input_tokens > 1000 ? `${(msg.usage.input_tokens / 1000).toFixed(1)}K` : msg.usage.input_tokens}</span> : null}
+                      {msg.usage.output_tokens ? <span>📤 {msg.usage.output_tokens > 1000 ? `${(msg.usage.output_tokens / 1000).toFixed(1)}K` : msg.usage.output_tokens}</span> : null}
+                      {msg.usage.tool_calls ? <span>🔧 {msg.usage.tool_calls}</span> : null}
+                      {msg.usage.cost_usd ? <span>💰 ${msg.usage.cost_usd.toFixed(4)}</span> : null}
+                    </div>
                   )}
                 </>
               )}

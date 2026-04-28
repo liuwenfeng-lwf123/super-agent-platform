@@ -53,7 +53,7 @@ import { useLocalMode } from "./useLocalMode";
 export default function ChatPage() {
   const [threads, setThreads] = useState<ThreadListItem[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<{ role: string; content: string; _streaming_terminal?: boolean }[]>([]);
+  const [messages, setMessages] = useState<{ role: string; content: string; _streaming_terminal?: boolean; usage?: { input_tokens?: number; output_tokens?: number; cost_usd?: number; tool_calls?: number; agents_spawned?: number } }[]>([]);
   const [input, setInput] = useState("");
   const [slashCompletions, setSlashCompletions] = useState<SlashCommand[]>([]);
   const [slashSelectedIdx, setSlashSelectedIdx] = useState(0);
@@ -302,6 +302,7 @@ export default function ChatPage() {
     setSpeculationNotice(null);
 
     let collected = "";
+    let usageData: { input_tokens?: number; output_tokens?: number; cost_usd?: number; tool_calls?: number; agents_spawned?: number } | null = null;
     let latestThreadId = activeThreadId || null;
     let permissionPoll: ReturnType<typeof setInterval> | null = null;
 
@@ -362,6 +363,7 @@ export default function ChatPage() {
             }
             if (event.usage) {
               setLastUsage(event.usage);
+              usageData = event.usage;
             }
           } else if (event.type === "plan" && event.data) {
             const steps = (event.data as { steps?: { id: string; task: string }[] }).steps || [];
@@ -480,7 +482,7 @@ export default function ChatPage() {
 
     setMessages((prev) => [
       ...prev,
-      { role: "assistant", content: collected || "No response" },
+      { role: "assistant", content: collected || "No response", ...(usageData ? { usage: usageData } : {}) },
     ]);
     if (collected) extractHtmlPreview(collected);
     if (latestThreadId) {

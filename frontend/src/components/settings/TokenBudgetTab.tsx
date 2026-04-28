@@ -10,10 +10,11 @@ import {
   setDailyBudget,
   fetchTokenHistory,
   fetchCacheStats,
+  fetchModelBreakdown,
   getExportCsvUrl,
 } from "@/lib/api";
-import type { TokenBudgetResponse, PresetInfo, DailyUsage, DayUsage, CacheStats } from "@/lib/api";
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
+import type { TokenBudgetResponse, PresetInfo, DailyUsage, DayUsage, CacheStats, ModelBreakdown } from "@/lib/api";
+import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Cell } from "recharts";
 
 export default function TokenBudgetTab() {
   const [tokenBudget, setTokenBudget] = useState<TokenBudgetResponse | null>(null);
@@ -27,17 +28,19 @@ export default function TokenBudgetTab() {
   const [historyDays, setHistoryDays] = useState<DayUsage[]>([]);
   const [historyMetric, setHistoryMetric] = useState<"total_tokens" | "cost_usd">("total_tokens");
   const [cacheStats, setCacheStats] = useState<CacheStats | null>(null);
+  const [modelBreakdown, setModelBreakdown] = useState<ModelBreakdown[]>([]);
 
   useEffect(() => { loadAll(); }, []);
 
   const loadAll = async () => {
     try {
-      const [data, presetsData, daily, history, cache] = await Promise.all([
+      const [data, presetsData, daily, history, cache, modelData] = await Promise.all([
         fetchTokenBudget(),
         fetchTokenPresets(),
         fetchDailyUsage(),
         fetchTokenHistory(7),
         fetchCacheStats(),
+        fetchModelBreakdown(),
       ]);
       setTokenBudget(data);
       setPresets(presetsData.presets || {});
@@ -45,6 +48,7 @@ export default function TokenBudgetTab() {
       setDailyUsage(daily);
       setHistoryDays(history.days || []);
       setCacheStats(cache);
+      setModelBreakdown(modelData.models || []);
       if (daily.budget > 0) setBudgetInput(String(daily.budget));
     } catch {
       setTokenBudget(null);
@@ -254,6 +258,58 @@ export default function TokenBudgetTab() {
             <span>{cacheStats.records_with_cache} / {cacheStats.total_records} 次请求使用了 Cache</span>
             <span>·</span>
             <span>总费用 ${cacheStats.total_cost_usd.toFixed(2)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Model Breakdown */}
+      {modelBreakdown.length > 0 && (
+        <div className="p-4 rounded-xl border space-y-3" style={{ borderColor: "var(--border-color)", background: "var(--bg-secondary)" }}>
+          <h3 className="text-sm font-medium">模型费用排行</h3>
+          <div style={{ width: "100%", height: Math.max(160, modelBreakdown.filter(m => m.cost_usd > 0).length * 32 + 20) }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={modelBreakdown.filter(m => m.cost_usd > 0).slice(0, 8)}
+                layout="vertical"
+                margin={{ top: 0, right: 10, left: 0, bottom: 0 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" horizontal={false} />
+                <XAxis
+                  type="number"
+                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.4)" }}
+                  tickFormatter={(v: number) => `$${v.toFixed(2)}`}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  dataKey="model"
+                  type="category"
+                  tick={{ fontSize: 10, fill: "rgba(255,255,255,0.5)" }}
+                  tickFormatter={(v: string) => v.length > 20 ? v.slice(0, 18) + "…" : v}
+                  width={130}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <Tooltip
+                  contentStyle={{ background: "#1e1e2e", border: "1px solid #333", borderRadius: 8, fontSize: 12 }}
+                  labelStyle={{ color: "#ccc" }}
+                  formatter={(value: unknown) => [`$${(Number(value) || 0).toFixed(4)}`, "费用"]}
+                />
+                <Bar dataKey="cost_usd" radius={[0, 4, 4, 0]}>
+                  {modelBreakdown.filter(m => m.cost_usd > 0).slice(0, 8).map((_, idx) => (
+                    <Cell key={idx} fill={["#8b5cf6", "#3b82f6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#6366f1"][idx % 8]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px]" style={{ color: "var(--text-secondary)" }}>
+            {modelBreakdown.filter(m => m.cost_usd > 0).slice(0, 8).map((m, i) => (
+              <span key={m.model}>
+                <span className="inline-block w-2 h-2 rounded-full mr-1" style={{ background: ["#8b5cf6", "#3b82f6", "#06b6d4", "#10b981", "#f59e0b", "#ef4444", "#ec4899", "#6366f1"][i % 8] }} />
+                {m.model.split("/").pop()} · {m.requests}次 · ${m.cost_usd.toFixed(2)}
+              </span>
+            ))}
           </div>
         </div>
       )}

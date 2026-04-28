@@ -210,7 +210,7 @@ class TestFeatureGuards(unittest.TestCase):
         extractor = MemoryExtractor()
         original = settings.enable_memory_extraction
         settings.enable_memory_extraction = False
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             extractor.maybe_extract([{"role": "user", "content": "hi"}] * 20)
         )
         self.assertEqual(result, [])
@@ -223,7 +223,7 @@ class TestFeatureGuards(unittest.TestCase):
 
         original = settings.enable_intent_classify
         settings.enable_intent_classify = False
-        result = asyncio.get_event_loop().run_until_complete(
+        result = asyncio.run(
             classify_intent("some ambiguous message")
         )
         # Should return fallback without calling LLM
@@ -267,6 +267,37 @@ class TestEnvLock(TokenBudgetTestBase):
         self.assertEqual(len(keys), len(set(keys)), "Duplicate keys found in .env after concurrent writes")
         # Restore all to True
         self.client.post("/api/features/token-budget/preset/full")
+
+
+class TestModelBreakdown(TokenBudgetTestBase):
+    """Tests for GET /api/features/token-budget/model-breakdown."""
+
+    @patch("app.agents.cost_tracker.cost_tracker")
+    def test_model_breakdown_empty(self, mock_ct):
+        mock_ct._load_logs.return_value = []
+        mock_ct._session_records = []
+        r = self.client.get("/api/features/token-budget/model-breakdown")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["models"], [])
+
+    @patch("app.agents.cost_tracker.cost_tracker")
+    def test_model_breakdown_aggregation(self, mock_ct):
+        mock_ct._load_logs.return_value = [
+            {"model": "gpt-4o", "input_tokens": 1000, "output_tokens": 200, "cost_usd": 0.01},
+            {"model": "gpt-4o", "input_tokens": 2000, "output_tokens": 300, "cost_usd": 0.02},
+            {"model": "deepseek-chat", "input_tokens": 500, "output_tokens": 100, "cost_usd": 0.001},
+        ]
+        mock_ct._session_records = []
+        r = self.client.get("/api/features/token-budget/model-breakdown")
+        d = r.json()
+        self.assertEqual(len(d["models"]), 2)
+        # Should be sorted by cost desc
+        self.assertEqual(d["models"][0]["model"], "gpt-4o")
+        self.assertEqual(d["models"][0]["requests"], 2)
+        self.assertEqual(d["models"][0]["input_tokens"], 3000)
+        self.assertEqual(d["models"][0]["total_tokens"], 3500)
+        self.assertEqual(d["models"][0]["cost_usd"], 0.03)
+        self.assertEqual(d["models"][1]["model"], "deepseek-chat")
 
 
 class TestCacheStats(TokenBudgetTestBase):

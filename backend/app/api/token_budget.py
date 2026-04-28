@@ -225,6 +225,31 @@ async def get_token_history(days: int = 7):
     return {"days": list(day_map.values())}
 
 
+@router.get("/features/token-budget/model-breakdown")
+async def get_model_breakdown():
+    """Return cost breakdown by model."""
+    from app.agents.cost_tracker import cost_tracker
+    logs = cost_tracker._load_logs()
+    session_records = [r.to_dict() for r in cost_tracker._session_records]
+    all_records = logs + session_records
+
+    model_data: dict[str, dict] = {}
+    for rec in all_records:
+        model = rec.get("model", "unknown") or "unknown"
+        if model not in model_data:
+            model_data[model] = {"model": model, "requests": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cost_usd": 0.0}
+        model_data[model]["requests"] += 1
+        model_data[model]["input_tokens"] += rec.get("input_tokens", 0)
+        model_data[model]["output_tokens"] += rec.get("output_tokens", 0)
+        model_data[model]["cost_usd"] += rec.get("cost_usd", 0)
+    for d in model_data.values():
+        d["total_tokens"] = d["input_tokens"] + d["output_tokens"]
+        d["cost_usd"] = round(d["cost_usd"], 4)
+
+    rows = sorted(model_data.values(), key=lambda x: x["cost_usd"], reverse=True)
+    return {"models": rows}
+
+
 @router.get("/features/token-budget/cache-stats")
 async def get_cache_stats():
     """Return prompt cache hit stats from session and persisted logs."""

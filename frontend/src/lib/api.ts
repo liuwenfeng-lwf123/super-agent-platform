@@ -340,6 +340,21 @@ export interface CacheStats {
   total_records: number;
 }
 
+// Model breakdown
+export interface ModelBreakdown {
+  model: string;
+  requests: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+}
+
+export async function fetchModelBreakdown(): Promise<{ models: ModelBreakdown[] }> {
+  const res = await fetch(`${API_BASE}/features/token-budget/model-breakdown`);
+  return res.json();
+}
+
 export async function fetchCacheStats(): Promise<CacheStats> {
   const res = await fetch(`${API_BASE}/features/token-budget/cache-stats`);
   return res.json();
