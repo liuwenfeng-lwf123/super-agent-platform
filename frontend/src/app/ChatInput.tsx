@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 import {
   Send,
   Paperclip,
@@ -8,7 +8,9 @@ import {
   ImageIcon,
   Wrench,
   Brain,
+  AlertTriangle,
 } from "lucide-react";
+import { fetchDailyUsage } from "@/lib/api";
 import { TOOL_NAME_LABELS, TOOL_CATEGORY_LABELS, fallbackToolLabel, fallbackToolSummary } from "./chat-constants";
 import type { ChatTool } from "./chat-constants";
 import type { SlashCommand } from "@/lib/slash";
@@ -82,9 +84,46 @@ export function ChatInput({
   inputRef,
   fileInputRef,
 }: ChatInputProps) {
+  const [budgetPct, setBudgetPct] = useState(0);
+  const [budgetOver, setBudgetOver] = useState(false);
+  const [budgetRemaining, setBudgetRemaining] = useState(-1);
+  const [hasBudget, setHasBudget] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const d = await fetchDailyUsage();
+        if (cancelled) return;
+        setHasBudget(d.budget > 0);
+        setBudgetPct(d.budget_used_pct);
+        setBudgetOver(d.is_over_budget);
+        setBudgetRemaining(d.remaining);
+      } catch { /* ignore */ }
+    };
+    check();
+    const interval = setInterval(check, 30000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
   return (
     <div className="px-6 pb-5">
       <div className="max-w-3xl mx-auto">
+        {hasBudget && budgetPct >= 70 && (
+          <div
+            className="flex items-center gap-2 px-3 py-1.5 mb-2 rounded-lg text-xs"
+            style={{
+              background: budgetOver ? "rgba(239,68,68,0.15)" : budgetPct >= 90 ? "rgba(245,158,11,0.15)" : "rgba(245,158,11,0.08)",
+              border: `1px solid ${budgetOver ? "rgba(239,68,68,0.4)" : "rgba(245,158,11,0.3)"}`,
+              color: budgetOver ? "#fca5a5" : "#fbbf24",
+            }}
+          >
+            <AlertTriangle size={14} />
+            {budgetOver
+              ? "今日 Token 预算已用完，消息将被拦截。请在设置 → Token 预算中调整。"
+              : `今日已用 ${budgetPct.toFixed(0)}%，剩余 ${budgetRemaining > 1000 ? `${(budgetRemaining / 1000).toFixed(0)}K` : budgetRemaining} tokens`}
+          </div>
+        )}
         {pendingImages.length > 0 && (
           <div className="flex gap-2 mb-2 flex-wrap">
             {pendingImages.map((img, idx) => (

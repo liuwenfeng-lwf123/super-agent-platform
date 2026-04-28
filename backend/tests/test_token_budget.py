@@ -9,7 +9,7 @@ from unittest.mock import patch, MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.api.features import router, _TOKEN_FEATURES, _PRESETS
+from app.api.token_budget import router, _TOKEN_FEATURES, _PRESETS
 from app.config import Settings
 
 
@@ -27,7 +27,7 @@ class TokenBudgetTestBase(unittest.TestCase):
         self.client = TestClient(app)
 
         # Patch _ENV_PATH to use temp file
-        self._env_patch = patch("app.api.features._ENV_PATH", self._env_path)
+        self._env_patch = patch("app.api.token_budget._ENV_PATH", self._env_path)
         self._env_patch.start()
 
     def tearDown(self):

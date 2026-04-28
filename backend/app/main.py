@@ -111,8 +111,10 @@ from app.security.rbac import RBACMiddleware
 app.add_middleware(RBACMiddleware)
 
 from app.api.features import router as features_router
+from app.api.token_budget import router as token_budget_router
 app.include_router(router)
 app.include_router(features_router)
+app.include_router(token_budget_router)
 app.include_router(local_router)
 app.include_router(local_router, prefix="/api")
 app.include_router(local_ws_router)
