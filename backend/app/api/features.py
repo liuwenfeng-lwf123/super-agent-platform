@@ -2,6 +2,7 @@
 import os
 import platform
 import shutil
+import threading
 from fastapi import APIRouter
 from pydantic import BaseModel
 from app.config import settings
@@ -9,6 +10,7 @@ from app.config import settings
 router = APIRouter(prefix="/api", tags=["Features"])
 
 _ENV_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
+_env_lock = threading.Lock()
 
 # Map feature id -> env key + settings attr
 _TOGGLEABLE = {
@@ -48,21 +50,22 @@ def _read_env_lines() -> list[str]:
 
 
 def _write_env_key(key: str, value: str):
-    """Write or update a key in .env file."""
-    lines = _read_env_lines()
-    found = False
-    new_lines = []
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith(f"{key}=") or stripped.startswith(f"# {key}="):
+    """Write or update a key in .env file. Thread-safe."""
+    with _env_lock:
+        lines = _read_env_lines()
+        found = False
+        new_lines = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith(f"{key}=") or stripped.startswith(f"# {key}="):
+                new_lines.append(f"{key}={value}\n")
+                found = True
+            else:
+                new_lines.append(line)
+        if not found:
             new_lines.append(f"{key}={value}\n")
-            found = True
-        else:
-            new_lines.append(line)
-    if not found:
-        new_lines.append(f"{key}={value}\n")
-    with open(_ENV_PATH, "w") as f:
-        f.writelines(new_lines)
+        with open(_ENV_PATH, "w") as f:
+            f.writelines(new_lines)
 
 
 class ToggleRequest(BaseModel):
