@@ -673,7 +673,30 @@ class EvolutionController:
                 "timestamp": datetime.now().isoformat(),
             }, ensure_ascii=False, indent=2))
 
+            # Auto-deploy: write evolved content back to SkillRegistry
+            self._auto_deploy(skill_name, best["content"], run_id, improvement)
+
         return result
+
+    def _auto_deploy(self, skill_name: str, evolved_content: str, run_id: str, improvement: float):
+        """Deploy evolved skill content back to SkillRegistry if the skill exists."""
+        try:
+            from app.agents.evolution import skill_registry
+            existing = skill_registry.get_skill(skill_name)
+            if existing is None:
+                logger.info("Evolution skip deploy: skill '%s' not in registry", skill_name)
+                return
+            # Only deploy if improvement is meaningful (>2%)
+            if improvement < 0.02:
+                logger.info("Evolution skip deploy: improvement %.4f too small for '%s'", improvement, skill_name)
+                return
+            ok, msg = skill_registry.edit_skill(skill_name, evolved_content)
+            if ok:
+                logger.info("Evolution auto-deployed '%s' (run=%s, improvement=+%.4f): %s", skill_name, run_id, improvement, msg)
+            else:
+                logger.warning("Evolution deploy failed for '%s': %s", skill_name, msg)
+        except Exception as e:
+            logger.warning("Evolution auto-deploy error for '%s': %s", skill_name, e)
 
     def auto_triage(self) -> list[dict]:
         """Identify skills that need optimization (by failure rate)."""
@@ -1586,6 +1609,8 @@ class CronManager:
                 )
                 result["output"] = proc.stdout[:2000]
                 result["status"] = "success" if proc.returncode == 0 else "error"
+            elif job.action_type == "evolution":
+                result.update(self._run_auto_evolution(job.action))
             else:
                 result["output"] = f"Action type '{job.action_type}' not yet supported"
                 result["status"] = "skipped"
@@ -1598,6 +1623,58 @@ class CronManager:
         result["delivery"] = self._deliver_result(job, result)
         self._save()
         return result
+
+    @staticmethod
+    def _run_auto_evolution(action: str) -> dict:
+        """Run auto-triage and evolve underperforming skills.
+
+        action can be 'auto_triage' (find + evolve worst skills)
+        or a specific skill name to evolve.
+        """
+        try:
+            # Use module-level singleton
+            ctrl = evolution_controller
+            if action == "auto_triage":
+                triage = ctrl.auto_triage()
+                if not triage:
+                    return {"status": "success", "output": "No skills need evolution (all above 70% success rate).", "evolved": []}
+                evolved = []
+                for candidate in triage[:3]:  # evolve top 3 worst skills
+                    skill_name = candidate["skill_name"]
+                    from app.agents.evolution import skill_registry
+                    skill = skill_registry.get_skill(skill_name)
+                    if skill is None:
+                        continue
+                    content = skill.get("system_prompt", "")
+                    if not content:
+                        continue
+                    result = ctrl.evolve_skill(skill_name, content, iterations=3)
+                    evolved.append({
+                        "skill": skill_name,
+                        "improvement": result.get("improvement", 0),
+                        "status": result.get("status", "unknown"),
+                    })
+                return {
+                    "status": "success",
+                    "output": f"Triaged {len(triage)} skills, evolved {len(evolved)}.",
+                    "triage": triage,
+                    "evolved": evolved,
+                }
+            else:
+                # Evolve specific skill
+                from app.agents.evolution import skill_registry
+                skill = skill_registry.get_skill(action)
+                if skill is None:
+                    return {"status": "error", "error": f"Skill '{action}' not found"}
+                content = skill.get("system_prompt", "")
+                result = ctrl.evolve_skill(action, content, iterations=5)
+                return {
+                    "status": "success",
+                    "output": f"Evolved '{action}': improvement={result.get('improvement', 0):+.4f}",
+                    "evolution_result": result,
+                }
+        except Exception as e:
+            return {"status": "error", "error": str(e)}
 
     # --- Background Scheduler ---
     def _cron_matches_now(self, schedule: str) -> bool:
@@ -1744,3 +1821,12 @@ gepa_engine = GEPAEngine()
 plugin_registry = PluginRegistry()
 cron_manager = CronManager()
 elicitation_manager = ElicitationManager()
+
+# Seed built-in auto-evolution cron job (daily at 03:00)
+if "_auto_evolve" not in cron_manager._jobs:
+    cron_manager.add_job(
+        "_auto_evolve",
+        "daily at 03:00",
+        "auto_triage",
+        action_type="evolution",
+    )

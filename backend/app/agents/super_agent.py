@@ -903,6 +903,24 @@ class SuperAgent:
                 input_tokens=estimate_tokens(FLASH_SYSTEM + message),
                 output_tokens=estimate_tokens(full_out) if full_out else 0,
             )
+
+        # --- Evolution trace recording (flash flow) ---
+        try:
+            from app.agents.self_evolution import evolution_controller, TraceEntry
+            from datetime import datetime as _dt
+            _trace = TraceEntry(
+                timestamp=_dt.now().isoformat(),
+                thread_id="",
+                skill_name="_default",
+                user_input=message[:500],
+                agent_output=full_out[:1000],
+                tool_calls=[],
+                success=bool(full_out and len(full_out) > 10),
+            )
+            evolution_controller.trace_collector.record(_trace)
+        except Exception as e:
+            logger.debug("Evolution trace recording (flash) failed: %s", e)
+
         usage = cost_tracker.finish_tracking()
         yield json.dumps({"type": "done", "usage": usage})
 
@@ -1095,6 +1113,26 @@ class SuperAgent:
             await hooks_registry.fire("Stop", stop_data)
         except Exception as e:
             logger.debug("Stop hook failed: %s", e)
+
+        # --- Evolution trace recording (auto-collects execution data) ---
+        try:
+            from app.agents.self_evolution import evolution_controller, TraceEntry
+            from datetime import datetime as _dt
+            _skill_name = (self._active_skills[0] if self._active_skills else "_default")
+            _trace = TraceEntry(
+                timestamp=_dt.now().isoformat(),
+                thread_id=thread_id or "",
+                skill_name=_skill_name,
+                user_input=message[:500],
+                agent_output=full_content[:1000],
+                tool_calls=[{"name": t} for t in tool_calls_made],
+                cost_usd=cost_tracker.current_cost_usd() if hasattr(cost_tracker, 'current_cost_usd') else 0.0,
+                success=bool(full_content and len(full_content) > 10),
+                score=None,
+            )
+            evolution_controller.trace_collector.record(_trace)
+        except Exception as e:
+            logger.debug("Evolution trace recording failed: %s", e)
 
         usage = cost_tracker.finish_tracking()
         yield json.dumps({"type": "done", "usage": usage})
