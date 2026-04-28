@@ -38,8 +38,10 @@ import {
   applyTokenPreset,
   fetchDailyUsage,
   setDailyBudget,
+  fetchTokenHistory,
 } from "@/lib/api";
-import type { FeatureInfo, TokenFeature, TokenBudgetResponse, PresetInfo, DailyUsage } from "@/lib/api";
+import type { FeatureInfo, TokenFeature, TokenBudgetResponse, PresetInfo, DailyUsage, DayUsage } from "@/lib/api";
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 import type { DemoSeedResult, ModelConfig, SecurityAuditEvent, SecurityPolicyResponse, SkillConfig, MemoryEntry } from "@/types";
 
 interface Props {
@@ -94,6 +96,8 @@ export default function SettingsPanel({ onBack }: Props) {
   const [dailyUsage, setDailyUsage] = useState<DailyUsage | null>(null);
   const [budgetInput, setBudgetInput] = useState("");
   const [presetApplying, setPresetApplying] = useState<string | null>(null);
+  const [historyDays, setHistoryDays] = useState<DayUsage[]>([]);
+  const [historyMetric, setHistoryMetric] = useState<"total_tokens" | "cost_usd">("total_tokens");
 
   useEffect(() => {
     loadData();
@@ -126,15 +130,17 @@ export default function SettingsPanel({ onBack }: Props) {
 
   const loadTokenBudget = async () => {
     try {
-      const [data, presetsData, daily] = await Promise.all([
+      const [data, presetsData, daily, history] = await Promise.all([
         fetchTokenBudget(),
         fetchTokenPresets(),
         fetchDailyUsage(),
+        fetchTokenHistory(7),
       ]);
       setTokenBudget(data);
       setPresets(presetsData.presets || {});
       setActivePreset(presetsData.active_preset);
       setDailyUsage(daily);
+      setHistoryDays(history.days || []);
       if (daily.budget > 0) setBudgetInput(String(daily.budget));
     } catch {
       setTokenBudget(null);
@@ -597,6 +603,87 @@ export default function SettingsPanel({ onBack }: Props) {
                         取消限制
                       </button>
                     )}
+                  </div>
+                </div>
+              )}
+
+              {/* 7-Day Trend Chart */}
+              {historyDays.length > 0 && (
+                <div className="p-4 rounded-xl border space-y-3" style={{ borderColor: "var(--border-color)", background: "var(--bg-secondary)" }}>
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-medium">7 天趋势</h3>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => setHistoryMetric("total_tokens")}
+                        className="px-2 py-0.5 rounded text-[10px]"
+                        style={{
+                          background: historyMetric === "total_tokens" ? "var(--accent)" : "transparent",
+                          color: historyMetric === "total_tokens" ? "#fff" : "var(--text-secondary)",
+                          border: historyMetric === "total_tokens" ? "none" : "1px solid var(--border-color)",
+                        }}
+                      >
+                        Tokens
+                      </button>
+                      <button
+                        onClick={() => setHistoryMetric("cost_usd")}
+                        className="px-2 py-0.5 rounded text-[10px]"
+                        style={{
+                          background: historyMetric === "cost_usd" ? "var(--accent)" : "transparent",
+                          color: historyMetric === "cost_usd" ? "#fff" : "var(--text-secondary)",
+                          border: historyMetric === "cost_usd" ? "none" : "1px solid var(--border-color)",
+                        }}
+                      >
+                        费用
+                      </button>
+                    </div>
+                  </div>
+                  <div style={{ width: "100%", height: 180 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={historyDays} margin={{ top: 5, right: 5, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="colorMetric" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                        <XAxis
+                          dataKey="date"
+                          tick={{ fontSize: 10, fill: "rgba(255,255,255,0.4)" }}
+                          tickFormatter={(v: string) => v.slice(5)}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 10, fill: "rgba(255,255,255,0.4)" }}
+                          axisLine={false}
+                          tickLine={false}
+                          tickFormatter={(v: number) =>
+                            historyMetric === "cost_usd" ? `$${v.toFixed(2)}` : v > 1000000 ? `${(v / 1000000).toFixed(1)}M` : v > 1000 ? `${(v / 1000).toFixed(0)}K` : String(v)
+                          }
+                          width={55}
+                        />
+                        <Tooltip
+                          contentStyle={{ background: "#1e1e2e", border: "1px solid #333", borderRadius: 8, fontSize: 12 }}
+                          labelStyle={{ color: "#888" }}
+                          formatter={(value: unknown) => {
+                            const v = Number(value) || 0;
+                            return historyMetric === "cost_usd"
+                              ? [`$${v.toFixed(4)}`, "费用"]
+                              : [`${v.toLocaleString()}`, "Tokens"];
+                          }}
+                          labelFormatter={(label: unknown) => String(label)}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey={historyMetric}
+                          stroke="#8b5cf6"
+                          strokeWidth={2}
+                          fillOpacity={1}
+                          fill="url(#colorMetric)"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
                   </div>
                 </div>
               )}

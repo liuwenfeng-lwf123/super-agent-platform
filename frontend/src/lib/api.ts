@@ -312,6 +312,21 @@ export async function setDailyBudget(budget: number): Promise<{ success: boolean
   return res.json();
 }
 
+// Token usage history
+export interface DayUsage {
+  date: string;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+  requests: number;
+}
+
+export async function fetchTokenHistory(days: number = 7): Promise<{ days: DayUsage[] }> {
+  const res = await fetch(`${API_BASE}/features/token-budget/history?days=${days}`);
+  return res.json();
+}
+
 export async function fetchWorkspaceFiles(threadId: string, path: string = ".") {
   const res = await fetch(`${API_BASE}/workspace/${threadId}/files?path=${encodeURIComponent(path)}`);
   return res.json();

@@ -330,6 +330,30 @@ async def set_daily_budget(req: DailyBudgetRequest):
     return {"success": True, "message": f"每日预算已设为 {req.daily_token_budget:,} tokens"}
 
 
+@router.get("/features/token-budget/history")
+async def get_token_history(days: int = 7):
+    """Return per-day token usage for the last N days."""
+    from app.agents.cost_tracker import cost_tracker
+    from datetime import date, timedelta
+    logs = cost_tracker._load_logs()
+    # Build day map
+    day_map: dict[str, dict] = {}
+    for i in range(days):
+        d = (date.today() - timedelta(days=days - 1 - i)).isoformat()
+        day_map[d] = {"date": d, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cost_usd": 0.0, "requests": 0}
+    for log in logs:
+        ts = log.get("timestamp", "")[:10]
+        if ts in day_map:
+            day_map[ts]["input_tokens"] += log.get("input_tokens", 0)
+            day_map[ts]["output_tokens"] += log.get("output_tokens", 0)
+            day_map[ts]["cost_usd"] += log.get("cost_usd", 0)
+            day_map[ts]["requests"] += 1
+    for d in day_map.values():
+        d["total_tokens"] = d["input_tokens"] + d["output_tokens"]
+        d["cost_usd"] = round(d["cost_usd"], 4)
+    return {"days": list(day_map.values())}
+
+
 @router.post("/features/toggle")
 async def toggle_feature(req: ToggleRequest):
     """Toggle a feature on/off. Writes to .env and updates runtime settings."""
