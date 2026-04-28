@@ -297,17 +297,18 @@ class MutationEngine:
                 "description": "Added structural markers for clarity",
             })
 
-        # Strategy 2: Add error handling guidance
-        with_errors = original + "\n\n## Error Handling\n- 遇到错误时，先诊断根因再尝试修复\n- 如果连续失败3次，停止并报告问题\n- 保留错误上下文以便调试"
-        candidates.append({
-            "id": f"{gen_id}_errh",
-            "content": with_errors,
-            "mutation_type": "expand",
-            "description": "Added error handling guidance",
-        })
+        # Strategy 2: Add error handling guidance (skip if already present)
+        if "## Error Handling" not in original:
+            with_errors = original + "\n\n## Error Handling\n- 遇到错误时，先诊断根因再尝试修复\n- 如果连续失败3次，停止并报告问题\n- 保留错误上下文以便调试"
+            candidates.append({
+                "id": f"{gen_id}_errh",
+                "content": with_errors,
+                "mutation_type": "expand",
+                "description": "Added error handling guidance",
+            })
 
-        # Strategy 3: Failure-aware fix
-        if failure_examples:
+        # Strategy 3: Failure-aware fix (skip if already present)
+        if failure_examples and "## Known Issues" not in original:
             failure_text = "\n".join(f"- {ex[:200]}" for ex in failure_examples[:5])
             fix = original + f"\n\n## Known Issues (auto-detected)\n以下场景需要特别注意:\n{failure_text}"
             candidates.append({
