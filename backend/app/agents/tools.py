@@ -1056,12 +1056,97 @@ async def execute_tool_chain(code: str) -> str:
     return "\n".join(parts) if parts else "(tool chain completed with no output)"
 
 
+@tool
+async def run_pipeline(pipeline_name: str, inputs: str = "{}") -> str:
+    """Execute a predefined tool pipeline — a sequence of tool calls in one turn.
+
+    Pipelines reduce round-trips by chaining tools automatically.
+    Use `list` as pipeline_name to see all available pipelines.
+
+    Available pipelines:
+      - research_and_summarize: Search + fetch + summarize (input: {"query": "..."})
+      - code_and_test: Write code + run tests (input: {"path": "...", "code": "...", "test_command": "..."})
+      - fetch_and_extract: Fetch page + extract data (input: {"url": "...", "extract_code": "..."})
+      - multi_search_compare: Two searches for comparison (input: {"query_1": "...", "query_2": "..."})
+      - read_analyze_write: Read + analyze + write (input: {"source_path": "...", "analysis_code": "...", "output_path": "..."})
+
+    Args:
+        pipeline_name: Name of the pipeline to execute, or "list" to show available ones
+        inputs: JSON string with pipeline input parameters
+    """
+    from app.agents.tool_pipelines import pipeline_registry
+
+    if pipeline_name == "list":
+        pipelines = pipeline_registry.list_pipelines()
+        lines = ["Available pipelines:"]
+        for p in pipelines:
+            steps_desc = " → ".join(s["tool_name"] for s in p["steps"])
+            lines.append(f"  • {p['name']}: {p['description']} [{steps_desc}]")
+        return "\n".join(lines)
+
+    try:
+        parsed_inputs = json.loads(inputs) if isinstance(inputs, str) else inputs
+    except json.JSONDecodeError:
+        return f"Invalid JSON inputs: {inputs}"
+
+    result = await pipeline_registry.execute(pipeline_name, parsed_inputs)
+    parts = [f"Pipeline '{pipeline_name}': {result.status} ({result.steps_completed}/{result.steps_total} steps, {result.elapsed_seconds:.1f}s)"]
+    if result.errors:
+        parts.append("Errors: " + "; ".join(result.errors))
+    if result.final_result:
+        parts.append(f"Result:\n{result.final_result}")
+    return "\n".join(parts)
+
+
+@tool
+async def spawn_agent(task: str, role: str = "researcher", reason: str = "") -> str:
+    """Spawn a specialized child agent to handle a sub-task in parallel.
+
+    Use this when you encounter a sub-problem that would benefit from a dedicated specialist.
+    The child agent runs independently and returns its result.
+
+    Args:
+        task: Specific task description for the child agent
+        role: Agent role — one of: researcher, coder, writer, analyst, searcher, verifier, planner
+        reason: Brief explanation of why this sub-task needs a separate agent
+
+    Returns:
+        The child agent's result or error message.
+
+    Example:
+        spawn_agent(task="Find the latest React 19 breaking changes", role="researcher")
+        spawn_agent(task="Write unit tests for the auth module", role="coder")
+    """
+    from app.agents.dynamic_spawn import spawn_manager, SpawnRequest
+    from app.agents.tool_runtime import get_runtime_context
+
+    ctx = get_runtime_context()
+    parent_id = ctx.agent_id or ctx.thread_id or "main"
+    spawn_manager.register_parent(parent_id)
+
+    request = SpawnRequest(task=task, role=role, reason=reason)
+    result_text = ""
+    async for event in spawn_manager.spawn_child(parent_id, request):
+        if event["type"] == "spawn_denied":
+            return f"Spawn denied: {event['reason']}"
+        elif event["type"] == "spawn_completed":
+            status = event.get("status", "unknown")
+            result_text = event.get("result", "")
+            if status == "completed":
+                return f"[Child agent ({role}) completed]\n{result_text}"
+            else:
+                return f"[Child agent ({role}) {status}]\n{result_text}"
+    return result_text or "(no result from child agent)"
+
+
 BASE_TOOLS = [
     web_search, web_fetch, execute_python, execute_javascript, execute_bash,
     write_file, read_file, list_files, get_current_time, calculate,
     get_editor_state, get_editor_diagnostics,
     execute_code,
     execute_tool_chain,
+    run_pipeline,
+    spawn_agent,
 ] 
 
 

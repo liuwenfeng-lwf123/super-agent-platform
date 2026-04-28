@@ -204,6 +204,10 @@ async def chat(request: ChatRequest):
                     yield f"event: agents_completed\ndata: {event_str}\n\n"
                 elif event_data.get("type") == "memory_extracted":
                     yield f"event: memory_extracted\ndata: {event_str}\n\n"
+                elif event_data.get("type") in ("reflection_start", "reflection_eval", "reflection_correction_token", "reflection_done"):
+                    yield f"event: {event_data['type']}\ndata: {event_str}\n\n"
+                elif event_data.get("type") in ("spawn_started", "spawn_completed", "spawn_denied", "spawn_batch_done"):
+                    yield f"event: {event_data['type']}\ndata: {event_str}\n\n"
                 elif event_data.get("type") == "done":
                     assistant_content = "".join(full_content)
                     assistant_msg = Message(

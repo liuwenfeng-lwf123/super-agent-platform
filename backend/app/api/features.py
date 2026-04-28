@@ -165,3 +165,69 @@ async def toggle_feature(req: ToggleRequest):
         "feature_id": req.feature_id,
         "enabled": req.enable,
     }
+
+
+# --- Pipeline Management ---
+@router.get("/pipelines")
+async def list_pipelines(tag: str = ""):
+    """List available tool pipelines."""
+    from app.agents.tool_pipelines import pipeline_registry
+    return {"pipelines": pipeline_registry.list_pipelines(tag=tag or None)}
+
+
+class CreatePipelineRequest(BaseModel):
+    name: str
+    description: str
+    steps: list[dict]
+    tags: list[str] = []
+
+
+@router.post("/pipelines")
+async def create_pipeline(req: CreatePipelineRequest):
+    """Create a custom tool pipeline."""
+    from app.agents.tool_pipelines import pipeline_registry, Pipeline, PipelineStep
+
+    steps = []
+    for s in req.steps:
+        steps.append(PipelineStep(
+            tool_name=s.get("tool_name", ""),
+            description=s.get("description", ""),
+            input_template=s.get("input_template", {}),
+            output_key=s.get("output_key", ""),
+            condition=s.get("condition", ""),
+            timeout=s.get("timeout", 30),
+        ))
+
+    pipeline = Pipeline(
+        name=req.name,
+        description=req.description,
+        steps=steps,
+        created_by="user",
+        tags=req.tags,
+    )
+    pipeline_registry.register(pipeline)
+    return {"success": True, "pipeline": pipeline.to_dict()}
+
+
+@router.delete("/pipelines/{name}")
+async def delete_pipeline(name: str):
+    """Delete a user-created pipeline."""
+    from app.agents.tool_pipelines import pipeline_registry
+    removed = pipeline_registry.remove(name)
+    if not removed:
+        return {"success": False, "message": f"Cannot remove pipeline '{name}' (not found or system-level)"}
+    return {"success": True, "message": f"Pipeline '{name}' removed"}
+
+
+# --- Dynamic Spawn Status ---
+@router.get("/spawn/status")
+async def get_spawn_status():
+    """Get current spawn manager status."""
+    from app.agents.dynamic_spawn import spawn_manager
+    return {
+        "active_parents": len(spawn_manager._active_spawns),
+        "total_children": sum(len(v) for v in spawn_manager._active_spawns.values()),
+        "results_cached": len(spawn_manager._results),
+        "max_depth": 3,
+        "max_children_per_agent": 4,
+    }

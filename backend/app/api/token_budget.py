@@ -30,6 +30,8 @@ _TOKEN_FEATURES = {
                          "用 LLM 对模糊意图做二次分类", 1500),
     "magic_docs": ("ENABLE_MAGIC_DOCS", "enable_magic_docs", "智能文档",
                     "自动生成和更新项目文档", 8000),
+    "reflection": ("ENABLE_REFLECTION", "enable_reflection", "自我反思纠错",
+                    "Agent 输出后自动评审并修正错误（仅 Pro/Ultra）", 10000),
 }
 
 # Preset modes
@@ -37,17 +39,17 @@ _PRESETS = {
     "minimal": {
         "speculation": False, "sub_agents": False, "gepa_evolution": False,
         "memory_extraction": False, "agent_summaries": False, "tool_use_summary": False,
-        "prompt_suggestions": False, "intent_classify": False, "magic_docs": False,
+        "prompt_suggestions": False, "intent_classify": False, "magic_docs": False, "reflection": False,
     },
     "standard": {
         "speculation": True, "sub_agents": False, "gepa_evolution": False,
         "memory_extraction": True, "agent_summaries": True, "tool_use_summary": False,
-        "prompt_suggestions": True, "intent_classify": True, "magic_docs": False,
+        "prompt_suggestions": True, "intent_classify": True, "magic_docs": False, "reflection": False,
     },
     "full": {
         "speculation": True, "sub_agents": True, "gepa_evolution": True,
         "memory_extraction": True, "agent_summaries": True, "tool_use_summary": True,
-        "prompt_suggestions": True, "intent_classify": True, "magic_docs": True,
+        "prompt_suggestions": True, "intent_classify": True, "magic_docs": True, "reflection": True,
     },
 }
 

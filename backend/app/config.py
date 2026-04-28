@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     enable_memory_extraction: bool = True
     enable_sub_agents: bool = True
     enable_intent_classify: bool = True
+    enable_reflection: bool = True
     daily_token_budget: int = 0  # 0 = unlimited, otherwise max tokens per day
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}

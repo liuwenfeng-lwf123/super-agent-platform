@@ -1043,6 +1043,20 @@ class SuperAgent:
             except Exception as e:
                 logger.debug("Skill suggestion check failed: %s", e)
 
+        # --- Reflection: self-verification & correction (pro/ultra only) ---
+        try:
+            from app.agents.reflection import should_reflect, reflect_and_correct
+            if should_reflect(flow_name, message, len(full_content)):
+                corrected_content = ""
+                async for refl_event in reflect_and_correct(message, full_content, effective_model):
+                    if refl_event["type"] == "reflection_correction_token":
+                        corrected_content += refl_event["content"]
+                    yield json.dumps(refl_event)
+                if corrected_content:
+                    full_content = corrected_content
+        except Exception as e:
+            logger.debug("Reflection step skipped: %s", e)
+
         # --- Post-processing: memory extraction (both flows) ---
         try:
             from app.memory.extract_memories import memory_extractor
