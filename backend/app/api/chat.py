@@ -79,6 +79,20 @@ async def _collect_layered_memory_entries(layered_memory) -> list[dict]:
 
 @router.post("/chat")
 async def chat(request: ChatRequest):
+    # Daily token budget enforcement
+    from app.config import settings as _cfg
+    if _cfg.daily_token_budget > 0:
+        from app.agents.cost_tracker import cost_tracker
+        daily = cost_tracker.get_daily_summary()
+        today_total = daily.get("total_input_tokens", 0) + daily.get("total_output_tokens", 0)
+        if today_total >= _cfg.daily_token_budget:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(status_code=429, content={
+                "error": "daily_budget_exceeded",
+                "message": f"今日 Token 已用 {today_total:,}，超出预算 {_cfg.daily_token_budget:,}。请在设置 → Token 预算中调整上限。",
+                "used": today_total,
+                "budget": _cfg.daily_token_budget,
+            })
     if request.thread_id:
         thread = await thread_store.get(request.thread_id)
         if not thread:

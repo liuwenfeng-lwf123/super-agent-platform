@@ -392,6 +392,9 @@ async def record_trace(payload: dict):
 
 @router.post("/evolution/gepa")
 async def run_gepa_evolution(payload: dict):
+    from app.config import settings
+    if not settings.enable_gepa_evolution:
+        return {"error": "GEPA 自进化已关闭，可在设置 → Token 预算中开启", "best_score": None}
     from app.agents.self_evolution import gepa_engine
     result = gepa_engine.evolve(
         payload.get("original", ""),

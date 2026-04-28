@@ -58,6 +58,9 @@ async def classify_intent(message: str, timeout: float = 3.0) -> dict:
         return result
 
     # --- LLM classification for ambiguous messages ---
+    from app.config import settings
+    if not settings.enable_intent_classify:
+        return result or {"intent": "chat", "confidence": 0.3}
     try:
         llm_result = await asyncio.wait_for(_llm_classify(message), timeout=timeout)
         if llm_result:

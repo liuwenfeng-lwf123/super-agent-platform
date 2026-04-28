@@ -115,6 +115,9 @@ class MemoryExtractor:
         force: bool = False,
     ) -> list[dict]:
         """Extract memories if conditions are met. Returns list of extracted memories."""
+        from app.config import settings
+        if not settings.enable_memory_extraction and not force:
+            return []
         session_state = self._get_or_create_session_state(session_id)
         if not force:
             # Check message count

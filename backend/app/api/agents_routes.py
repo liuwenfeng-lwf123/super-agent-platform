@@ -91,6 +91,9 @@ async def remove_subagent(name: str):
 
 @router.post("/subagents/spawn")
 async def spawn_subagent(payload: dict):
+    from app.config import settings
+    if not settings.enable_sub_agents:
+        return {"error": "子 Agent 协作已关闭，可在设置 → Token 预算中开启", "agent_id": None, "status": "disabled"}
     from app.agents.subagents import subagent_manager
     instance = await subagent_manager.spawn(
         payload.get("agent_name", "general-purpose"),

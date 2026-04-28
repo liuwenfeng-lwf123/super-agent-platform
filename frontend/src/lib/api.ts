@@ -236,6 +236,82 @@ export async function toggleFeature(featureId: string, enable: boolean): Promise
   return res.json();
 }
 
+// Token Budget Control
+export interface TokenFeature {
+  id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  est_tokens_per_use: number;
+}
+
+export interface TokenBudgetResponse {
+  features: TokenFeature[];
+  total_est_tokens: number;
+  active_est_tokens: number;
+  saved_tokens: number;
+}
+
+export async function fetchTokenBudget(): Promise<TokenBudgetResponse> {
+  const res = await fetch(`${API_BASE}/features/token-budget`);
+  return res.json();
+}
+
+export async function toggleTokenFeature(featureId: string, enable: boolean): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_BASE}/features/token-budget/toggle`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ feature_id: featureId, enable }),
+  });
+  return res.json();
+}
+
+// Preset modes
+export interface PresetInfo {
+  name: string;
+  description: string;
+  est_per_chat: string;
+  features: Record<string, boolean>;
+}
+
+export async function fetchTokenPresets(): Promise<{ presets: Record<string, PresetInfo>; active_preset: string | null }> {
+  const res = await fetch(`${API_BASE}/features/token-budget/presets`);
+  return res.json();
+}
+
+export async function applyTokenPreset(presetName: string): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_BASE}/features/token-budget/preset/${presetName}`, { method: "POST" });
+  return res.json();
+}
+
+// Daily budget
+export interface DailyUsage {
+  date: string;
+  requests: number;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  cost_usd: number;
+  budget: number;
+  budget_used_pct: number;
+  is_over_budget: boolean;
+  remaining: number;
+}
+
+export async function fetchDailyUsage(): Promise<DailyUsage> {
+  const res = await fetch(`${API_BASE}/features/token-budget/daily`);
+  return res.json();
+}
+
+export async function setDailyBudget(budget: number): Promise<{ success: boolean; message: string }> {
+  const res = await fetch(`${API_BASE}/features/token-budget/daily`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ daily_token_budget: budget }),
+  });
+  return res.json();
+}
+
 export async function fetchWorkspaceFiles(threadId: string, path: string = ".") {
   const res = await fetch(`${API_BASE}/workspace/${threadId}/files?path=${encodeURIComponent(path)}`);
   return res.json();

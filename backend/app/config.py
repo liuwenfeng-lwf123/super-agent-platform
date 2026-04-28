@@ -44,6 +44,13 @@ class Settings(BaseSettings):
     enable_magic_docs: bool = True
     enable_policy_limits: bool = True
 
+    # Token budget control — disable to save tokens
+    enable_gepa_evolution: bool = True
+    enable_memory_extraction: bool = True
+    enable_sub_agents: bool = True
+    enable_intent_classify: bool = True
+    daily_token_budget: int = 0  # 0 = unlimited, otherwise max tokens per day
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 
