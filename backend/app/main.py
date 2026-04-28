@@ -104,6 +104,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from app.middleware import RequestTimingMiddleware, RateLimitMiddleware
+app.add_middleware(RequestTimingMiddleware)
+app.add_middleware(RateLimitMiddleware, max_requests=10, window_seconds=60)
+
 from app.security.auth import TokenAuthMiddleware
 app.add_middleware(TokenAuthMiddleware)
 

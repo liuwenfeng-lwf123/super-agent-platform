@@ -47,6 +47,8 @@ class MemoryStore:
         self._entries: dict[str, MemoryEntry] = {}
         self._idf: dict[str, float] = {}
         self._entry_vectors: dict[str, dict[str, float]] = {}
+        self._query_cache: dict[str, tuple[float, str]] = {}  # query -> (timestamp, result)
+        self._cache_ttl: float = 60.0  # seconds
         os.makedirs(self.storage_path, exist_ok=True)
         self._load()
 
@@ -66,7 +68,11 @@ class MemoryStore:
                 self._entries = {}
         self._rebuild_index()
 
+    def _invalidate_cache(self):
+        self._query_cache.clear()
+
     def _save(self):
+        self._invalidate_cache()
         filepath = self._filepath()
         data = [entry.model_dump(mode="json") for entry in self._entries.values()]
         dir_name = os.path.dirname(filepath)
@@ -151,6 +157,14 @@ class MemoryStore:
         return False
 
     async def get_context_for_query(self, query: str, max_entries: int = 5) -> str:
+        import time as _time
+        cache_key = f"{query}:{max_entries}"
+        cached = self._query_cache.get(cache_key)
+        if cached:
+            ts, result = cached
+            if _time.time() - ts < self._cache_ttl:
+                return result
+
         relevant = await self.search(query)
         relevant.sort(key=lambda e: e.access_count, reverse=True)
         relevant = relevant[:max_entries]
@@ -164,7 +178,9 @@ class MemoryStore:
             lines.append(f"- {entry.key}: {entry.value}")
 
         self._save()
-        return "\n".join(lines)
+        context = "\n".join(lines)
+        self._query_cache[cache_key] = (_time.time(), context)
+        return context
 
 
 memory_store = MemoryStore()

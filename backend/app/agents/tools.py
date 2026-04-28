@@ -1099,7 +1099,7 @@ async def run_pipeline(pipeline_name: str, inputs: str = "{}") -> str:
 
 
 @tool
-async def spawn_agent(task: str, role: str = "researcher", reason: str = "") -> str:
+async def spawn_child_agent(task: str, role: str = "researcher", reason: str = "") -> str:
     """Spawn a specialized child agent to handle a sub-task in parallel.
 
     Use this when you encounter a sub-problem that would benefit from a dedicated specialist.
@@ -1114,8 +1114,8 @@ async def spawn_agent(task: str, role: str = "researcher", reason: str = "") -> 
         The child agent's result or error message.
 
     Example:
-        spawn_agent(task="Find the latest React 19 breaking changes", role="researcher")
-        spawn_agent(task="Write unit tests for the auth module", role="coder")
+        spawn_child_agent(task="Find the latest React 19 breaking changes", role="researcher")
+        spawn_child_agent(task="Write unit tests for the auth module", role="coder")
     """
     from app.agents.dynamic_spawn import spawn_manager, SpawnRequest
     from app.agents.tool_runtime import get_runtime_context
@@ -1146,7 +1146,7 @@ BASE_TOOLS = [
     execute_code,
     execute_tool_chain,
     run_pipeline,
-    spawn_agent,
+    spawn_child_agent,
 ] 
 
 

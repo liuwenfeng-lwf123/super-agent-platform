@@ -183,7 +183,8 @@ class TestMCPServerClient(unittest.TestCase):
         config = MCPServerConfig(name="http", url="http://localhost:8080", api_key="sk-123")
         client = MCPServerClient(config)
 
-        with patch("app.skills.mcp.httpx.AsyncClient", FakeAsyncClient):
+        fake_client = FakeAsyncClient()
+        with patch("app.skills.mcp._get_mcp_client", return_value=fake_client):
             prompts = asyncio.run(client.discover_prompts())
             prompt_result = asyncio.run(client.get_prompt("summarize", {"topic": "demo"}))
             resources = asyncio.run(client.discover_resources())

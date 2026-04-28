@@ -76,6 +76,9 @@ class TaskManager:
         task = Task(task_id=task_id, name=name, description=description, agent_id=agent_id)
         self._tasks[task_id] = task
         logger.info(f"Task created: {task_id} - {name}")
+        # Auto-cleanup every 50 task creations
+        if len(self._tasks) % 50 == 0:
+            self.cleanup_old(max_age_hours=1)
         return task
 
     async def run_task(self, task: Task, coro) -> Task:

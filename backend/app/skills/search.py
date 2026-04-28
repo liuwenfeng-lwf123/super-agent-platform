@@ -11,6 +11,23 @@ from bs4 import BeautifulSoup
 
 
 logger = logging.getLogger(__name__)
+
+# Module-level shared httpx client for connection pooling
+_shared_client: httpx.AsyncClient | None = None
+
+
+def _get_shared_client() -> httpx.AsyncClient:
+    global _shared_client
+    if _shared_client is None or _shared_client.is_closed:
+        _shared_client = httpx.AsyncClient(
+            timeout=15,
+            follow_redirects=True,
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},
+        )
+    return _shared_client
+
+
 class WebSearchTool:
     def __init__(self, max_results: int = 5):
         self.max_results = max_results
@@ -51,14 +68,13 @@ class WebSearchTool:
         return await asyncio.get_event_loop().run_in_executor(None, _sync_search)
 
     async def _search_html(self, query: str, limit: int) -> list[dict]:
-        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-            resp = await client.get(
-                "https://html.duckduckgo.com/html/",
-                params={"q": query},
-                headers={"User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"},
-            )
-            resp.raise_for_status()
-            return self._parse_ddg_html(resp.text, limit)
+        client = _get_shared_client()
+        resp = await client.get(
+            "https://html.duckduckgo.com/html/",
+            params={"q": query},
+        )
+        resp.raise_for_status()
+        return self._parse_ddg_html(resp.text, limit)
 
     def _parse_ddg_html(self, html: str, limit: int) -> list[dict]:
         results = []
@@ -127,17 +143,15 @@ class WebSearchTool:
         if ssrf_err:
             return ssrf_err
         try:
-            async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-                resp = await client.get(url, headers={
-                    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36"
-                })
-                resp.raise_for_status()
-                content_type = resp.headers.get("content-type", "")
-                if "text/html" in content_type:
-                    text = self._extract_text_from_html(resp.text)
-                else:
-                    text = resp.text
-                return text[:max_length]
+            client = _get_shared_client()
+            resp = await client.get(url)
+            resp.raise_for_status()
+            content_type = resp.headers.get("content-type", "")
+            if "text/html" in content_type:
+                text = self._extract_text_from_html(resp.text)
+            else:
+                text = resp.text
+            return text[:max_length]
         except Exception as e:
             return f"Failed to fetch {url}: {str(e)}"
 

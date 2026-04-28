@@ -8,6 +8,19 @@ import os
 
 logger = logging.getLogger(__name__)
 
+# Module-level shared httpx client for MCP HTTP transport
+_mcp_http_client: httpx.AsyncClient | None = None
+
+
+def _get_mcp_client() -> httpx.AsyncClient:
+    global _mcp_http_client
+    if _mcp_http_client is None or _mcp_http_client.is_closed:
+        _mcp_http_client = httpx.AsyncClient(
+            timeout=15,
+            limits=httpx.Limits(max_connections=10, max_keepalive_connections=5),
+        )
+    return _mcp_http_client
+
 
 class MCPTool(BaseModel):
     name: str
@@ -234,22 +247,22 @@ class MCPServerClient:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
 
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(
-                    f"{self.config.url}/tools",
-                    headers=headers,
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    self._tools = [
-                        MCPTool(
-                            name=t.get("name", ""),
-                            description=t.get("description", ""),
-                            input_schema=t.get("inputSchema", t.get("input_schema", {})),
-                        )
-                        for t in data.get("tools", [])
-                    ]
-                return self._tools
+            client = _get_mcp_client()
+            resp = await client.get(
+                f"{self.config.url}/tools",
+                headers=headers,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                self._tools = [
+                    MCPTool(
+                        name=t.get("name", ""),
+                        description=t.get("description", ""),
+                        input_schema=t.get("inputSchema", t.get("input_schema", {})),
+                    )
+                    for t in data.get("tools", [])
+                ]
+            return self._tools
         except Exception as e:
             logger.debug("Suppressed error in mcp: %s", e)
             return self._tools
@@ -267,19 +280,19 @@ class MCPServerClient:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
 
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(f"{self.config.url}/prompts", headers=headers)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    self._prompts = [
-                        MCPPrompt(
-                            name=p.get("name", ""),
-                            description=p.get("description", ""),
-                            arguments=p.get("arguments", p.get("inputSchema", [])),
-                        )
-                        for p in data.get("prompts", [])
-                    ]
-                return self._prompts
+            client = _get_mcp_client()
+            resp = await client.get(f"{self.config.url}/prompts", headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                self._prompts = [
+                    MCPPrompt(
+                        name=p.get("name", ""),
+                        description=p.get("description", ""),
+                        arguments=p.get("arguments", p.get("inputSchema", [])),
+                    )
+                    for p in data.get("prompts", [])
+                ]
+            return self._prompts
         except Exception as e:
             logger.debug("Suppressed error in mcp: %s", e)
             return self._prompts
@@ -296,15 +309,15 @@ class MCPServerClient:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
 
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(
-                    f"{self.config.url}/prompts/{prompt_name}",
-                    headers=headers,
-                    json={"arguments": arguments or {}},
-                )
-                if resp.status_code == 200:
-                    return resp.json()
-                return {"error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+            client = _get_mcp_client()
+            resp = await client.post(
+                f"{self.config.url}/prompts/{prompt_name}",
+                headers=headers,
+                json={"arguments": arguments or {}},
+            )
+            if resp.status_code == 200:
+                return resp.json()
+            return {"error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
         except Exception as e:
             return {"error": str(e)}
 
@@ -321,20 +334,20 @@ class MCPServerClient:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
 
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(f"{self.config.url}/resources", headers=headers)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    self._resources = [
-                        MCPResource(
-                            uri=r.get("uri", ""),
-                            name=r.get("name", ""),
-                            description=r.get("description", ""),
-                            mime_type=r.get("mimeType", r.get("mime_type", "")),
-                        )
-                        for r in data.get("resources", [])
-                    ]
-                return self._resources
+            client = _get_mcp_client()
+            resp = await client.get(f"{self.config.url}/resources", headers=headers)
+            if resp.status_code == 200:
+                data = resp.json()
+                self._resources = [
+                    MCPResource(
+                        uri=r.get("uri", ""),
+                        name=r.get("name", ""),
+                        description=r.get("description", ""),
+                        mime_type=r.get("mimeType", r.get("mime_type", "")),
+                    )
+                    for r in data.get("resources", [])
+                ]
+            return self._resources
         except Exception as e:
             logger.debug("Suppressed error in mcp: %s", e)
             return self._resources
@@ -351,15 +364,15 @@ class MCPServerClient:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
 
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(
-                    f"{self.config.url}/resources/read",
-                    headers=headers,
-                    json={"uri": uri},
-                )
-                if resp.status_code == 200:
-                    return resp.json()
-                return {"error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+            client = _get_mcp_client()
+            resp = await client.post(
+                f"{self.config.url}/resources/read",
+                headers=headers,
+                json={"uri": uri},
+            )
+            if resp.status_code == 200:
+                return resp.json()
+            return {"error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
         except Exception as e:
             return {"error": str(e)}
 
@@ -376,15 +389,15 @@ class MCPServerClient:
             headers["Authorization"] = f"Bearer {self.config.api_key}"
 
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(
-                    f"{self.config.url}/tools/{tool_name}",
-                    headers=headers,
-                    json={"arguments": arguments},
-                )
-                if resp.status_code == 200:
-                    return resp.json()
-                return {"error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
+            client = _get_mcp_client()
+            resp = await client.post(
+                f"{self.config.url}/tools/{tool_name}",
+                headers=headers,
+                json={"arguments": arguments},
+            )
+            if resp.status_code == 200:
+                return resp.json()
+            return {"error": f"HTTP {resp.status_code}: {resp.text[:200]}"}
         except Exception as e:
             return {"error": str(e)}
 
