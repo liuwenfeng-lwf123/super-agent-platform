@@ -269,5 +269,96 @@ class TestEnvLock(TokenBudgetTestBase):
         self.client.post("/api/features/token-budget/preset/full")
 
 
+class TestCacheStats(TokenBudgetTestBase):
+    """Tests for GET /api/features/token-budget/cache-stats."""
+
+    @patch("app.agents.cost_tracker.cost_tracker")
+    def test_cache_stats_empty(self, mock_ct):
+        mock_ct._load_logs.return_value = []
+        mock_ct._session_records = []
+        r = self.client.get("/api/features/token-budget/cache-stats")
+        self.assertEqual(r.status_code, 200)
+        d = r.json()
+        self.assertEqual(d["total_records"], 0)
+        self.assertEqual(d["cache_hit_rate"], 0)
+        self.assertEqual(d["saved_usd"], 0)
+
+    @patch("app.agents.cost_tracker.cost_tracker")
+    def test_cache_stats_with_data(self, mock_ct):
+        mock_ct._load_logs.return_value = [
+            {"input_tokens": 10000, "output_tokens": 500, "cache_creation_tokens": 2000,
+             "cache_read_tokens": 5000, "cost_usd": 0.05, "timestamp": "2026-04-28T12:00:00"},
+            {"input_tokens": 8000, "output_tokens": 300, "cache_creation_tokens": 0,
+             "cache_read_tokens": 3000, "cost_usd": 0.03, "timestamp": "2026-04-28T13:00:00"},
+        ]
+        mock_ct._session_records = []
+        r = self.client.get("/api/features/token-budget/cache-stats")
+        self.assertEqual(r.status_code, 200)
+        d = r.json()
+        self.assertEqual(d["total_records"], 2)
+        self.assertEqual(d["total_input_tokens"], 18000)
+        self.assertEqual(d["cache_creation_tokens"], 2000)
+        self.assertEqual(d["cache_read_tokens"], 8000)
+        self.assertEqual(d["total_cache_tokens"], 10000)
+        self.assertGreater(d["cache_hit_rate"], 0)
+        self.assertEqual(d["records_with_cache"], 2)
+        self.assertGreater(d["saved_usd"], 0)
+
+
+class TestExportCSV(TokenBudgetTestBase):
+    """Tests for GET /api/features/token-budget/export."""
+
+    @patch("app.agents.cost_tracker.cost_tracker")
+    def test_export_empty_month(self, mock_ct):
+        mock_ct._load_logs.return_value = []
+        r = self.client.get("/api/features/token-budget/export?month=2026-04")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("text/csv", r.headers["content-type"])
+        lines = r.text.strip().split("\n")
+        # header + empty + summary line
+        self.assertGreaterEqual(len(lines), 1)
+        self.assertIn("日期", lines[0])
+
+    @patch("app.agents.cost_tracker.cost_tracker")
+    def test_export_with_data(self, mock_ct):
+        mock_ct._load_logs.return_value = [
+            {"timestamp": "2026-04-25T10:00:00", "input_tokens": 5000, "output_tokens": 1000, "cost_usd": 0.01},
+            {"timestamp": "2026-04-25T14:00:00", "input_tokens": 3000, "output_tokens": 500, "cost_usd": 0.008},
+            {"timestamp": "2026-04-26T09:00:00", "input_tokens": 7000, "output_tokens": 2000, "cost_usd": 0.02},
+        ]
+        r = self.client.get("/api/features/token-budget/export?month=2026-04")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("text/csv", r.headers["content-type"])
+        self.assertIn("attachment", r.headers.get("content-disposition", ""))
+        lines = r.text.strip().split("\n")
+        # header + 2 data rows + empty + summary = 5
+        self.assertEqual(len(lines), 5)
+        self.assertIn("2026-04-25", lines[1])
+        self.assertIn("2026-04-26", lines[2])
+        # Summary row
+        self.assertIn("合计", lines[4])
+
+    @patch("app.agents.cost_tracker.cost_tracker")
+    def test_export_filters_by_month(self, mock_ct):
+        mock_ct._load_logs.return_value = [
+            {"timestamp": "2026-03-31T23:00:00", "input_tokens": 100, "output_tokens": 10, "cost_usd": 0.001},
+            {"timestamp": "2026-04-01T01:00:00", "input_tokens": 200, "output_tokens": 20, "cost_usd": 0.002},
+        ]
+        r = self.client.get("/api/features/token-budget/export?month=2026-04")
+        lines = r.text.strip().split("\n")
+        # header + 1 data row + empty + summary = 4
+        self.assertEqual(len(lines), 4)
+        self.assertIn("2026-04-01", lines[1])
+        self.assertNotIn("2026-03-31", r.text)
+
+    @patch("app.agents.cost_tracker.cost_tracker")
+    def test_export_default_month(self, mock_ct):
+        """When no month param, should default to current month."""
+        mock_ct._load_logs.return_value = []
+        r = self.client.get("/api/features/token-budget/export")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("token_report_", r.headers.get("content-disposition", ""))
+
+
 if __name__ == "__main__":
     unittest.main()

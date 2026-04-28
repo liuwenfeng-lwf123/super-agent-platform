@@ -223,3 +223,104 @@ async def get_token_history(days: int = 7):
         d["total_tokens"] = d["input_tokens"] + d["output_tokens"]
         d["cost_usd"] = round(d["cost_usd"], 4)
     return {"days": list(day_map.values())}
+
+
+@router.get("/features/token-budget/cache-stats")
+async def get_cache_stats():
+    """Return prompt cache hit stats from session and persisted logs."""
+    from app.agents.cost_tracker import cost_tracker
+    logs = cost_tracker._load_logs()
+    session_records = [r.to_dict() for r in cost_tracker._session_records]
+    all_records = logs + session_records
+
+    total_input = 0
+    total_cache_creation = 0
+    total_cache_read = 0
+    total_cost = 0.0
+    records_with_cache = 0
+
+    for rec in all_records:
+        inp = rec.get("input_tokens", 0)
+        cc = rec.get("cache_creation_tokens", 0)
+        cr = rec.get("cache_read_tokens", 0)
+        total_input += inp
+        total_cache_creation += cc
+        total_cache_read += cr
+        total_cost += rec.get("cost_usd", 0)
+        if cc or cr:
+            records_with_cache += 1
+
+    total_cache = total_cache_creation + total_cache_read
+    # Estimate savings: cache_read tokens cost ~1/10 of normal input
+    # So savings = cache_read_tokens * (normal_price - cache_price) / 1M
+    # Use default pricing for estimation
+    from app.agents.cost_tracker import MODEL_PRICING
+    default_pricing = MODEL_PRICING["default"]
+    normal_input_price = default_pricing["input"]
+    cache_read_price = default_pricing.get("cache_read", normal_input_price * 0.1)
+    saved_usd = (total_cache_read / 1_000_000) * (normal_input_price - cache_read_price)
+
+    hit_rate = round(total_cache_read / total_input * 100, 1) if total_input > 0 else 0
+
+    return {
+        "total_input_tokens": total_input,
+        "cache_creation_tokens": total_cache_creation,
+        "cache_read_tokens": total_cache_read,
+        "total_cache_tokens": total_cache,
+        "cache_hit_rate": hit_rate,
+        "saved_usd": round(saved_usd, 4),
+        "total_cost_usd": round(total_cost, 4),
+        "records_with_cache": records_with_cache,
+        "total_records": len(all_records),
+    }
+
+
+@router.get("/features/token-budget/export")
+async def export_monthly_csv(month: str = ""):
+    """Export monthly token usage as CSV. month format: YYYY-MM, defaults to current."""
+    from app.agents.cost_tracker import cost_tracker
+    from datetime import date, timedelta
+    from fastapi.responses import StreamingResponse
+    import io, csv
+
+    if not month:
+        month = date.today().strftime("%Y-%m")
+
+    logs = cost_tracker._load_logs()
+    # Filter logs for the given month
+    month_logs = [l for l in logs if l.get("timestamp", "")[:7] == month]
+
+    # Aggregate by day
+    day_data: dict[str, dict] = {}
+    for log in month_logs:
+        day = log.get("timestamp", "")[:10]
+        if day not in day_data:
+            day_data[day] = {"date": day, "requests": 0, "input_tokens": 0, "output_tokens": 0, "total_tokens": 0, "cost_usd": 0.0}
+        day_data[day]["requests"] += 1
+        day_data[day]["input_tokens"] += log.get("input_tokens", 0)
+        day_data[day]["output_tokens"] += log.get("output_tokens", 0)
+        day_data[day]["cost_usd"] += log.get("cost_usd", 0)
+    for d in day_data.values():
+        d["total_tokens"] = d["input_tokens"] + d["output_tokens"]
+        d["cost_usd"] = round(d["cost_usd"], 4)
+
+    rows = sorted(day_data.values(), key=lambda x: x["date"])
+
+    # Build CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["日期", "请求次数", "输入 Tokens", "输出 Tokens", "合计 Tokens", "费用 (USD)"])
+    for r in rows:
+        writer.writerow([r["date"], r["requests"], r["input_tokens"], r["output_tokens"], r["total_tokens"], r["cost_usd"]])
+    # Summary row
+    writer.writerow([])
+    writer.writerow(["合计", sum(r["requests"] for r in rows), sum(r["input_tokens"] for r in rows),
+                     sum(r["output_tokens"] for r in rows), sum(r["total_tokens"] for r in rows),
+                     round(sum(r["cost_usd"] for r in rows), 4)])
+
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=token_report_{month}.csv"},
+    )

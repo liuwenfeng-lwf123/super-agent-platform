@@ -327,6 +327,29 @@ export async function fetchTokenHistory(days: number = 7): Promise<{ days: DayUs
   return res.json();
 }
 
+// Cache stats
+export interface CacheStats {
+  total_input_tokens: number;
+  cache_creation_tokens: number;
+  cache_read_tokens: number;
+  total_cache_tokens: number;
+  cache_hit_rate: number;
+  saved_usd: number;
+  total_cost_usd: number;
+  records_with_cache: number;
+  total_records: number;
+}
+
+export async function fetchCacheStats(): Promise<CacheStats> {
+  const res = await fetch(`${API_BASE}/features/token-budget/cache-stats`);
+  return res.json();
+}
+
+export function getExportCsvUrl(month?: string): string {
+  const m = month || new Date().toISOString().slice(0, 7);
+  return `${API_BASE}/features/token-budget/export?month=${m}`;
+}
+
 export async function fetchWorkspaceFiles(threadId: string, path: string = ".") {
   const res = await fetch(`${API_BASE}/workspace/${threadId}/files?path=${encodeURIComponent(path)}`);
   return res.json();
