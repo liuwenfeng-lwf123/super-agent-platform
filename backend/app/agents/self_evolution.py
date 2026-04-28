@@ -287,6 +287,8 @@ class MutationEngine:
                 return llm_candidates[:num_variants]
 
         # --- Rule-based fallback ---
+        # Each strategy checks for duplication to ensure idempotent, compounding improvement.
+
         # Strategy 1: Add structure markers
         structured = self._add_structure(original)
         if structured != original:
@@ -297,7 +299,7 @@ class MutationEngine:
                 "description": "Added structural markers for clarity",
             })
 
-        # Strategy 2: Add error handling guidance (skip if already present)
+        # Strategy 2: Add error handling guidance
         if "## Error Handling" not in original:
             with_errors = original + "\n\n## Error Handling\n- 遇到错误时，先诊断根因再尝试修复\n- 如果连续失败3次，停止并报告问题\n- 保留错误上下文以便调试"
             candidates.append({
@@ -307,7 +309,7 @@ class MutationEngine:
                 "description": "Added error handling guidance",
             })
 
-        # Strategy 3: Failure-aware fix (skip if already present)
+        # Strategy 3: Failure-aware fix
         if failure_examples and "## Known Issues" not in original:
             failure_text = "\n".join(f"- {ex[:200]}" for ex in failure_examples[:5])
             fix = original + f"\n\n## Known Issues (auto-detected)\n以下场景需要特别注意:\n{failure_text}"
@@ -318,7 +320,37 @@ class MutationEngine:
                 "description": "Added failure-aware guidance",
             })
 
-        # Strategy 4: Concise version
+        # Strategy 4: Add role clarity and behavioral guidelines
+        if "## 行为规则" not in original and "## Guidelines" not in original:
+            guidelines = original + "\n\n## 行为规则\n- 始终使用专业、友好的语气\n- 必须在回复中提供具体的解决方案，不要只回复\"好的\"或\"嗯\"\n- 当无法确定答案时，明确告知用户并提供替代方案\n- 优先使用工具获取准确信息，避免猜测"
+            candidates.append({
+                "id": f"{gen_id}_guide",
+                "content": guidelines,
+                "mutation_type": "expand",
+                "description": "Added behavioral guidelines for quality responses",
+            })
+
+        # Strategy 5: Add output format specification
+        if "## 输出格式" not in original and "## Output Format" not in original:
+            formatted = original + "\n\n## 输出格式\n- 如果是步骤类回答，使用编号列表\n- 如果涉及多个选项，使用对比表格\n- 关键信息用**加粗**标注\n- 回复长度应在50-500字之间，避免过短或过长"
+            candidates.append({
+                "id": f"{gen_id}_fmt",
+                "content": formatted,
+                "mutation_type": "expand",
+                "description": "Added output format specification",
+            })
+
+        # Strategy 6: Add step-by-step workflow
+        if "## 工作流程" not in original and "## Workflow" not in original:
+            workflow = original + "\n\n## 工作流程\n1. 理解用户意图：仔细分析用户的问题，确认核心需求\n2. 收集信息：如果需要，使用工具查询相关数据\n3. 制定方案：基于收集的信息，制定具体的解决方案\n4. 清晰回复：用结构化的方式呈现答案\n5. 确认满意：询问用户是否解决了问题"
+            candidates.append({
+                "id": f"{gen_id}_wflow",
+                "content": workflow,
+                "mutation_type": "expand",
+                "description": "Added step-by-step workflow",
+            })
+
+        # Strategy 7: Concise version (only when content is long enough)
         lines = original.split("\n")
         if len(lines) > 10:
             concise = "\n".join(line for line in lines if line.strip() and not line.strip().startswith("#") or len(line.strip()) > 5)
@@ -328,6 +360,20 @@ class MutationEngine:
                 "mutation_type": "simplify",
                 "description": "Simplified to essential content",
             })
+
+        # Strategy 8: Add domain-specific keywords from failure analysis
+        if failure_examples and "## 关键场景" not in original:
+            # Extract unique keywords from failure examples
+            unique_scenarios = list(set(ex.strip() for ex in failure_examples if ex.strip()))[:8]
+            if unique_scenarios:
+                scenario_text = "\n".join(f"- 当用户说「{s[:50]}」时 → 提供详细的解决步骤，不要敷衍" for s in unique_scenarios)
+                scenario_fix = original + f"\n\n## 关键场景\n以下场景必须提供高质量回复:\n{scenario_text}"
+                candidates.append({
+                    "id": f"{gen_id}_scen",
+                    "content": scenario_fix,
+                    "mutation_type": "fix_failure",
+                    "description": "Added scenario-specific handling rules",
+                })
 
         return candidates[:num_variants]
 
@@ -621,7 +667,7 @@ class EvolutionController:
             mutations = self.mutation_engine.generate_mutations(
                 best["content"],
                 failure_examples=failure_texts if failure_texts else None,
-                num_variants=3,
+                num_variants=8,
             )
 
             for m in mutations:
